@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Trash2,
 } from 'lucide-react';
 import { Email, PaginatedEmails } from '../types';
 import { Badge } from '../components/Badge';
@@ -35,6 +36,33 @@ export const InboxPage: React.FC<InboxPageProps> = ({
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [batchClassifying, setBatchClassifying] = useState(false);
+  const [cleaningNonBiz, setCleaningNonBiz] = useState(false);
+
+  const handleDeleteSingle = async (emailId: number, subject: string) => {
+    if (!window.confirm(`Delete email "${subject}" from FlowShark?`)) return;
+    try {
+      await api.deleteEmail(emailId);
+      loadEmails(page, categoryFilter, searchTerm, false, industryFilter);
+      onRefreshSummary();
+    } catch (err: any) {
+      alert('Delete failed: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleCleanupNonBusiness = async () => {
+    if (!window.confirm('Purge all non-business notifications, Google alerts, and newsletters from FlowShark?')) return;
+    try {
+      setCleaningNonBiz(true);
+      const res = await api.cleanupNonBusiness();
+      alert(res.message);
+      loadEmails(1, categoryFilter, searchTerm, false, industryFilter);
+      onRefreshSummary();
+    } catch (err: any) {
+      alert('Cleanup failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setCleaningNonBiz(false);
+    }
+  };
 
   useEffect(() => {
     api.getIndustries().then((res) => {
@@ -177,6 +205,16 @@ export const InboxPage: React.FC<InboxPageProps> = ({
               Search
             </button>
           </form>
+
+          <button
+            onClick={handleCleanupNonBusiness}
+            disabled={cleaningNonBiz}
+            className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded-lg shadow-sm transition-colors flex items-center space-x-1 disabled:opacity-50"
+            title="Purge all non-business alerts and newsletters"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{cleaningNonBiz ? 'Purging...' : 'Clean Non-Business'}</span>
+          </button>
         </div>
       </div>
 
@@ -222,6 +260,7 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                 <th className="px-4 py-3">Industry</th>
                 <th className="px-4 py-3">Confidence</th>
                 <th className="px-4 py-3">Received</th>
+                <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -311,6 +350,18 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                       </td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-[11px]">
                         {email.received_at ? new Date(email.received_at).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteSingle(email.id, email.subject);
+                          }}
+                          title="Delete email from FlowShark"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   );

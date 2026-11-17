@@ -15,6 +15,8 @@ import {
   GitBranch,
   Clock,
   Building2,
+  Trash2,
+  TrendingUp,
 } from 'lucide-react';
 import { Email, Classification, ClassificationHistoryItem, EmailContextResponse } from '../types';
 import { Badge } from './Badge';
@@ -54,6 +56,24 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   const [corrSubIndustry, setCorrSubIndustry] = useState<string>('');
   const [corrNotes, setCorrNotes] = useState<string>('');
   const [savingCorrection, setSavingCorrection] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteEmail = async () => {
+    if (!email) return;
+    if (!window.confirm(`Are you sure you want to remove email "${email.subject}" from FlowShark?`)) {
+      return;
+    }
+    try {
+      setDeleting(true);
+      await api.deleteEmail(email.id);
+      onUpdated();
+      onClose();
+    } catch (err: any) {
+      alert('Delete failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     api.getIndustries().then((res) => setTaxonomy(res.industries)).catch(() => {});
@@ -153,12 +173,23 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
             </span>
             <h3 className="text-base font-bold text-slate-900 truncate mt-0.5">{email.subject}</h3>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleDeleteEmail}
+              disabled={deleting}
+              title="Remove this email from FlowShark"
+              className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors flex items-center space-x-1 text-xs font-semibold"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">{deleting ? 'Removing...' : 'Delete'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -275,6 +306,49 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                   <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Lead Stage</span>
                     <Badge type="stage" value={cls.lead_stage} />
+                  </div>
+                </div>
+
+                {/* Executive Classification Breakdown */}
+                <div className="bg-white rounded-xl p-3.5 border border-indigo-200/80 shadow-xs space-y-2.5">
+                  <div className="flex items-center space-x-1.5 text-indigo-900 font-bold text-xs uppercase tracking-wider">
+                    <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Executive Explanation: Why This Was Classified</span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="p-2.5 bg-indigo-50/50 rounded-lg border border-indigo-100">
+                      <span className="font-bold text-indigo-950 block mb-0.5">
+                        🎯 Why Stage is {cls.lead_stage.toUpperCase()}:
+                      </span>
+                      <p className="text-slate-600 leading-relaxed">
+                        {cls.lead_stage === 'qualified' &&
+                          'Confirmed commercial inquiry with explicit project scope, technical requirements, or budget allocation.'}
+                        {cls.lead_stage === 'negotiation' &&
+                          'Counter-offer or discount negotiation regarding proposal pricing or commercial terms.'}
+                        {cls.lead_stage === 'new' &&
+                          'First-time inbound business communication seeking service information or quotation.'}
+                        {cls.lead_stage === 'won' &&
+                          'Formal purchase order received or contract signed by customer.'}
+                        {(cls.lead_stage === 'unknown' || cls.lead_stage === 'not_applicable') &&
+                          (!cls.is_business_relevant
+                            ? 'This email is a non-business automated notification. Sales stages only apply to legitimate business leads and are intentionally excluded.'
+                            : 'Lacks specific commercial requirements or budget signals needed to advance lead stage.')}
+                        {!['qualified', 'negotiation', 'new', 'won', 'unknown', 'not_applicable'].includes(cls.lead_stage) &&
+                          cls.classification_reason}
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                      <span className="font-bold text-slate-800 block mb-0.5">
+                        💼 Commercial Relevance:
+                      </span>
+                      <p className="text-slate-600 leading-relaxed">
+                        {cls.is_business_relevant
+                          ? `Classified as ${cls.relevance_category?.replace('_', ' ') || 'business communication'}. Directly impacts pipeline.`
+                          : `Classified as ${cls.relevance_category?.replace('_', ' ') || 'non-business notification'}. Isolated from CRM.`}
+                      </p>
+                    </div>
                   </div>
                 </div>
 

@@ -35,21 +35,22 @@ class RelevanceResult:
 
 # Known automated non-business sender patterns (supporting signal)
 AUTOMATED_NOTIFICATION_SENDERS = [
-    re.compile(r"no-?reply@accounts\.google\.com", re.IGNORECASE),
-    re.compile(r"accounts\.google\.com", re.IGNORECASE),
+    re.compile(r"no-?reply@", re.IGNORECASE),
+    re.compile(r"noreply@", re.IGNORECASE),
+    re.compile(r"donotreply@", re.IGNORECASE),
+    re.compile(r"notifications?@", re.IGNORECASE),
+    re.compile(r"alert[s]?@", re.IGNORECASE),
+    re.compile(r"newsletter@", re.IGNORECASE),
+    re.compile(r"updates?@", re.IGNORECASE),
+    re.compile(r"recommendations?@", re.IGNORECASE),
     re.compile(r"mailer-daemon@", re.IGNORECASE),
     re.compile(r"postmaster@", re.IGNORECASE),
-    re.compile(r"workspace-noreply@google\.com", re.IGNORECASE),
-    re.compile(r"forms-receipts-noreply@google\.com", re.IGNORECASE),
-    re.compile(r"google-noreply@google\.com", re.IGNORECASE),
-    re.compile(r"notifications?@github\.com", re.IGNORECASE),
-    re.compile(r"support@github\.com", re.IGNORECASE),
-    re.compile(r"no-?reply@.*\.vercel\.app", re.IGNORECASE),
-    re.compile(r"no-?reply@render\.com", re.IGNORECASE),
+    re.compile(r"accounts\.google\.com", re.IGNORECASE),
     re.compile(r"@substack\.com", re.IGNORECASE),
     re.compile(r"@mail\.beehiiv\.com", re.IGNORECASE),
     re.compile(r"@medium\.com", re.IGNORECASE),
-    re.compile(r"alert[s]?@", re.IGNORECASE),
+    re.compile(r"@mail\.cerebralvalley\.ai", re.IGNORECASE),
+    re.compile(r"jobalert|indeed\.com|glassdoor\.com|naukri\.com|jobs2web\.com|talent-community\.com|hireft\.com|thesmartbridge\.com|pinterest\.com|wellfound\.com|alignerr\.com|unstop\.news|qemailserver\.com", re.IGNORECASE),
 ]
 
 # Account Security Notification Patterns
@@ -114,6 +115,14 @@ NEWSLETTER_PATTERNS = [
     re.compile(r"\bview this post on the web\b", re.IGNORECASE),
     re.compile(r"\bleetcode pattern\b", re.IGNORECASE),
     re.compile(r"\bsensex\b", re.IGNORECASE),
+    re.compile(r"\bjob alert\b", re.IGNORECASE),
+    re.compile(r"\bjobs in\b", re.IGNORECASE),
+    re.compile(r"\bapply now\b", re.IGNORECASE),
+    re.compile(r"\bnew opportunity has arrived\b", re.IGNORECASE),
+    re.compile(r"\brecommendations\b", re.IGNORECASE),
+    re.compile(r"\bopen / forget / repeat\b", re.IGNORECASE),
+    re.compile(r"\bthis is peak\b", re.IGNORECASE),
+    re.compile(r"\bfor you\. apply now\b", re.IGNORECASE),
 ]
 
 # Business Intent Signals (To ensure genuine business communications from tech domains are NOT blocked)
@@ -166,9 +175,14 @@ class BusinessRelevanceDetector:
         # Priority Check 1: Check for explicit Buying / Business Enquiry signals first
         # (A genuine enquiry from Google, Microsoft, or any domain must NOT be blocked)
         # -------------------------------------------------------------------------
-        for pat in BUSINESS_BUYING_SIGNALS:
+        is_automated_sender = any(s.search(sender_clean) for s in AUTOMATED_NOTIFICATION_SENDERS)
+
+        for idx, pat in enumerate(BUSINESS_BUYING_SIGNALS):
             m = pat.search(combined_text)
             if m:
+                # If automated broadcast sender, ignore standalone single word "inquiry" in articles
+                if idx == 0 and is_automated_sender:
+                    continue
                 # Confirm it is NOT a security alert or terms notice
                 if not any(sec.search(subject_clean) for sec in SECURITY_ALERT_SUBJECT_PATTERNS):
                     evidence.append(f"Business buying signal: '{m.group(0)}'")
@@ -291,12 +305,12 @@ class BusinessRelevanceDetector:
         # Check automated sender domains if body is largely automated
         is_automated_sender = any(s.search(sender_clean) for s in AUTOMATED_NOTIFICATION_SENDERS)
         if is_automated_sender:
-            evidence.append(f"Automated broadcast sender domain: '{sender_clean}'")
+            evidence.append(f"Automated broadcast / notification sender domain: '{sender_clean}'")
             return RelevanceResult(
                 relevance_category="automated_notification",
                 is_business_relevant=False,
-                confidence=0.88,
-                reason="Sent from known automated broadcast sender without direct business intent.",
+                confidence=0.92,
+                reason=f"Sent from automated system or broadcast sender ({sender_clean}) without commercial buying signals.",
                 evidence=evidence,
                 needs_review=False,
             )

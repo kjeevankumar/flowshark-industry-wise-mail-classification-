@@ -538,3 +538,280 @@ def get_classification_metrics(
         "lead_stages": {row[0]: row[1] for row in stage_counts},
     }
 
+
+# =========================================================================
+# AI Demo Email Tester & Simulation Endpoints
+# =========================================================================
+
+DEMO_PRESETS = {
+    "qualified_lead": {
+        "label": "Qualified Lead (Manufacturing / SaaS)",
+        "sender": "marcus.vance@apexmanufacturing.com",
+        "subject": "Inquiry: Smart Factory Telemetry Platform - Budget Approved",
+        "body": "Dear FlowShark Team,\n\nWe are looking for an IoT telemetry and analytics platform vendor for our 4 manufacturing facilities. Our Executive Committee has approved a budget of $75,000 for this initiative with a target delivery timeline in Q1. Please share your product documentation, quotation, and schedule a discovery call next Tuesday so we can review requirements.",
+        "description": "High-value commercial prospect with verified budget ($75k), defined timeline (Q1), and explicit requirements.",
+    },
+    "negotiation": {
+        "label": "Price Negotiation (Healthcare / IT Solutions)",
+        "sender": "dr.patel@metrocarehospitals.com",
+        "subject": "RE: Proposal for Cloud Patient Portal - Pricing Discussion",
+        "body": "Hi FlowShark Sales Team,\n\nThank you for presenting the revised proposal for our hospital patient portal ($45,000 for annual licensing and onboarding). We are eager to partner with you; however, our hospital board has allocated a strict ceiling of $38,000 for Phase 1. If you can provide a 15% discount on the licensing fee or waive the initial integration costs to bring the total to $38,000, we are ready to sign before Friday.",
+        "description": "Active price discount negotiation with target pricing and conditional commitment.",
+    },
+    "new_lead": {
+        "label": "New Inbound Lead (Fintech / Software)",
+        "sender": "alex.chen@innovatepay.io",
+        "subject": "Inquiry: Automated Compliance & Transaction Monitoring API",
+        "body": "Hello FlowShark,\n\nWe are a growth-stage payment processing startup looking for an automated compliance and transaction monitoring engine. Could you please share your product brochure, API documentation, and pricing tiers? We would also like to schedule a 30-minute discovery call with your solutions architect next Tuesday.",
+        "description": "First-time inbound business enquiry asking for service quotes and booking demo call.",
+    },
+    "existing_lead": {
+        "label": "Existing Lead Follow-up (Education / EdTech)",
+        "sender": "rachel.green@apexuniversity.edu",
+        "subject": "Follow-up: LMS Integration Scope Document",
+        "body": "Hi Team,\n\nFollowing up on our conference call on Wednesday regarding the custom LMS analytics connector. Our IT steering group has reviewed the scope document and had two quick clarification questions on SSO support. Can we jump on a brief 15-minute call tomorrow to address these so we can proceed to contract signoff?",
+        "description": "Known lead in active evaluation reviewing scope specifications for contract signing.",
+    },
+    "security_alert": {
+        "label": "Non-Business Security Alert (System Notification)",
+        "sender": "Google <no-reply@accounts.google.com>",
+        "subject": "Security alert: App password created for your account",
+        "body": "An App password was created to sign in to your Google Account. If you did not create this password, someone else may have access to your account. Check your account security immediately at https://myaccount.google.com.",
+        "description": "Automated security notification cleanly isolated and excluded from sales pipelines.",
+    },
+}
+
+
+from pydantic import BaseModel, Field
+
+
+class DemoEmailTestRequest(BaseModel):
+    sender: str = Field(default="marcus.vance@apexmanufacturing.com")
+    subject: str = Field(default="Approved Project Budget - Smart Factory Analytics Onboarding")
+    body: str = Field(default="We have approved the $75,000 budget for the smart factory analytics rollout.")
+    preset_key: Optional[str] = None
+    inject_into_inbox: bool = False
+
+
+@router.get(
+    "/demo-presets",
+    summary="Get Pre-Configured Demo Email Presets for Testing",
+)
+def get_demo_presets() -> Dict[str, Any]:
+    return {"presets": DEMO_PRESETS}
+
+
+@router.post(
+    "/test-demo",
+    summary="Simulate & Classify a Demo Email (With Executive Explanation)",
+    description="Runs the full classification pipeline on demo email text, provides structured 'Why' explanations, and optionally injects the email into FlowShark's inbox.",
+)
+def simulate_or_test_demo_email(
+    payload: DemoEmailTestRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    from app.services.explanation_service import generate_executive_explanation
+    from app.services.nlp_preprocessor import NLPPreprocessor
+    from app.services.relevance_detector import BusinessRelevanceDetector
+    from app.services.rule_classifier import RuleBasedClassifier
+    from app.services.industry_rule_classifier import IndustryRuleClassifier
+    from app.services.pipeline_service import PipelineClassifier
+
+    sender = payload.sender.strip()
+    subject = payload.subject.strip()
+    body = payload.body.strip()
+
+    if payload.preset_key and payload.preset_key in DEMO_PRESETS:
+        preset = DEMO_PRESETS[payload.preset_key]
+        sender = preset["sender"]
+        subject = preset["subject"]
+        body = preset["body"]
+
+    mailbox_service = MailboxService(db=db, settings=settings)
+    active_mb = mailbox_service.get_active_mailbox()
+
+    # If injection requested and mailbox is configured, persist to database
+    injected_email_id = None
+    if payload.inject_into_inbox and active_mb:
+        from app.core.datetime_utils import to_utc_naive
+        from app.models.email_model import Email
+        import time
+
+        simulated_uid = f"demo_{int(time.time() * 1000)}"
+        new_email = Email(
+            mailbox_id=active_mb.id,
+            account_email=active_mb.email_address,
+            imap_uid=simulated_uid,
+            uid_validity=1,
+            sender=sender,
+            recipient=active_mb.email_address,
+            subject=subject,
+            snippet=body[:200],
+            body_text=body,
+            body_html=f"<p>{body}</p>",
+            received_at=to_utc_naive(datetime.now(timezone.utc)),
+            sync_timestamp=to_utc_naive(datetime.now(timezone.utc)),
+        )
+        db.add(new_email)
+        db.commit()
+        db.refresh(new_email)
+        injected_email_id = new_email.id
+
+        # Classify with HybridClassifier
+        classifier = HybridClassifier(db=db, settings=settings)
+        cls_record = classifier.classify_email(new_email)
+
+        exec_exp = generate_executive_explanation(
+            is_business_relevant=cls_record.is_business_relevant,
+            relevance_category=cls_record.relevance_category or "business_conversation",
+            pipeline_category=cls_record.pipeline_category,
+            relationship=cls_record.relationship,
+            intent=cls_record.intent,
+            lead_stage=cls_record.lead_stage,
+            confidence=cls_record.confidence,
+            sender=sender,
+            subject=subject,
+            sender_industry=cls_record.sender_industry or "Unknown",
+            target_industry=cls_record.target_industry or "Unknown",
+            sub_industry=cls_record.sub_industry,
+            key_signals=cls_record.key_signals,
+            supporting_evidence=cls_record.supporting_evidence,
+            context_used=cls_record.context_used,
+        )
+
+        return {
+            "is_injected": True,
+            "email_id": injected_email_id,
+            "sender": sender,
+            "subject": subject,
+            "classification": {
+                "relevance_category": cls_record.relevance_category,
+                "is_business_relevant": cls_record.is_business_relevant,
+                "pipeline_category": cls_record.pipeline_category,
+                "relationship": cls_record.relationship,
+                "intent": cls_record.intent,
+                "lead_stage": cls_record.lead_stage,
+                "confidence": cls_record.confidence,
+                "classification_reason": cls_record.classification_reason,
+                "sender_industry": cls_record.sender_industry,
+                "target_industry": cls_record.target_industry,
+                "sub_industry": cls_record.sub_industry,
+                "business_activity": cls_record.business_activity,
+                "industry_confidence": cls_record.industry_confidence,
+                "key_signals": cls_record.key_signals,
+                "supporting_evidence": cls_record.supporting_evidence,
+                "suggested_next_action": cls_record.suggested_next_action,
+            },
+            "executive_breakdown": exec_exp,
+        }
+
+    # Simulation Mode (Read-only, zero DB persistence)
+    nlp = NLPPreprocessor()
+    preprocessed = nlp.preprocess(body_plain=body, body_html="", subject=subject)
+
+    rel_detector = BusinessRelevanceDetector()
+    rel_res = rel_detector.evaluate(sender=sender, subject=subject, body_text=preprocessed.cleaned_body)
+
+    if not rel_res.is_business_relevant:
+        exec_exp = generate_executive_explanation(
+            is_business_relevant=False,
+            relevance_category=rel_res.relevance_category,
+            pipeline_category=None,
+            relationship="not_applicable",
+            intent="not_applicable",
+            lead_stage="not_applicable",
+            confidence=rel_res.confidence,
+            sender=sender,
+            subject=subject,
+            sender_industry="Not Applicable",
+            target_industry="Not Applicable",
+            key_signals=rel_res.evidence,
+            supporting_evidence=rel_res.evidence,
+        )
+        return {
+            "is_injected": False,
+            "email_id": None,
+            "sender": sender,
+            "subject": subject,
+            "classification": {
+                "relevance_category": rel_res.relevance_category,
+                "is_business_relevant": False,
+                "pipeline_category": None,
+                "relationship": "not_applicable",
+                "intent": "not_applicable",
+                "lead_stage": "not_applicable",
+                "confidence": rel_res.confidence,
+                "classification_reason": rel_res.reason,
+                "sender_industry": "Not Applicable",
+                "target_industry": "Not Applicable",
+                "sub_industry": None,
+                "business_activity": None,
+                "industry_confidence": rel_res.confidence,
+                "key_signals": rel_res.evidence,
+                "supporting_evidence": rel_res.evidence,
+                "suggested_next_action": "Archive or ignore non-business notification.",
+            },
+            "executive_breakdown": exec_exp,
+        }
+
+    rule_engine = RuleBasedClassifier()
+    rule_res = rule_engine.evaluate(cleaned_body=preprocessed.cleaned_body, subject=subject)
+
+    ind_engine = IndustryRuleClassifier()
+    ind_res = ind_engine.evaluate(cleaned_body=preprocessed.cleaned_body, subject=subject, sender_email=sender)
+
+    pipe_classifier = PipelineClassifier()
+    pipe_res = pipe_classifier.assign_pipeline(
+        is_business_relevant=True,
+        relevance_category=rel_res.relevance_category,
+        relationship=rule_res.relationship,
+        intent=rule_res.intent,
+        lead_stage=rule_res.lead_stage,
+        confidence=rule_res.confidence,
+        key_signals=rule_res.key_signals,
+    )
+
+    exec_exp = generate_executive_explanation(
+        is_business_relevant=True,
+        relevance_category=rel_res.relevance_category,
+        pipeline_category=pipe_res.pipeline_category,
+        relationship=pipe_res.relationship or "new_contact",
+        intent=pipe_res.intent or "new_enquiry",
+        lead_stage=pipe_res.lead_stage or "new",
+        confidence=pipe_res.confidence,
+        sender=sender,
+        subject=subject,
+        sender_industry=ind_res.sender_industry,
+        target_industry=ind_res.target_industry,
+        sub_industry=ind_res.sub_industry,
+        key_signals=rule_res.key_signals,
+        supporting_evidence=rel_res.evidence + rule_res.key_signals,
+    )
+
+    return {
+        "is_injected": False,
+        "email_id": None,
+        "sender": sender,
+        "subject": subject,
+        "classification": {
+            "relevance_category": rel_res.relevance_category,
+            "is_business_relevant": True,
+            "pipeline_category": pipe_res.pipeline_category,
+            "relationship": pipe_res.relationship,
+            "intent": pipe_res.intent,
+            "lead_stage": pipe_res.lead_stage,
+            "confidence": pipe_res.confidence,
+            "classification_reason": pipe_res.reason,
+            "sender_industry": ind_res.sender_industry,
+            "target_industry": ind_res.target_industry,
+            "sub_industry": ind_res.sub_industry,
+            "business_activity": ind_res.business_activity,
+            "industry_confidence": ind_res.confidence,
+            "key_signals": rule_res.key_signals,
+            "supporting_evidence": rel_res.evidence + rule_res.key_signals,
+            "suggested_next_action": "Review inquiry details and follow up promptly.",
+        },
+        "executive_breakdown": exec_exp,
+    }
+

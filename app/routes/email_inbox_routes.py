@@ -367,3 +367,109 @@ def get_email_detail(
             detail=f"Email with ID {email_id} not found in active mailbox.",
         )
     return email_record
+
+
+@router.delete(
+    "/{email_id}",
+    summary="Delete an Email from FlowShark (Active Mailbox Only)",
+    description="Deletes a specific email and its associated classification and history records from FlowShark's database without affecting the remote Gmail inbox.",
+)
+def delete_email(
+    email_id: int,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    from app.models.classification_model import ClassificationHistory
+    from app.models.lead_model import LeadActivityHistory
+
+    mailbox_service = MailboxService(db=db, settings=settings)
+    active_mb = mailbox_service.get_active_mailbox()
+
+    query = db.query(Email).filter(Email.id == email_id)
+    if active_mb:
+        query = query.filter(Email.mailbox_id == active_mb.id)
+    elif settings.is_configured:
+        query = query.filter(Email.account_email == settings.GMAIL_ADDRESS)
+
+    email_record = query.first()
+    if not email_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Email with ID {email_id} not found in active mailbox.",
+        )
+
+    # Clean up associated records
+    db.query(ClassificationHistory).filter(ClassificationHistory.email_id == email_id).delete(synchronize_session=False)
+    db.query(LeadActivityHistory).filter(LeadActivityHistory.email_id == email_id).delete(synchronize_session=False)
+    db.query(Classification).filter(Classification.email_id == email_id).delete(synchronize_session=False)
+    db.delete(email_record)
+    db.commit()
+
+    return {
+        "success": True,
+        "deleted_id": email_id,
+        "message": f"Email {email_id} deleted successfully from FlowShark database.",
+    }
+
+
+@router.post(
+    "/cleanup-non-business",
+    summary="Purge / Clean Up Non-Business Notification Emails (Active Mailbox Only)",
+    description="Removes all automated system notifications, security alerts, and newsletters from the active mailbox in FlowShark's database.",
+)
+def cleanup_non_business(
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    from app.models.classification_model import ClassificationHistory
+    from app.models.lead_model import LeadActivityHistory
+
+    mailbox_service = MailboxService(db=db, settings=settings)
+    active_mb = mailbox_service.get_active_mailbox()
+
+    if not active_mb and not settings.is_configured:
+        return {"success": True, "deleted_count": 0, "message": "No active mailbox configured."}
+
+    mid = active_mb.id if active_mb else None
+    account_email = active_mb.email_address if active_mb else settings.GMAIL_ADDRESS
+
+    # Query all non-business emails in active mailbox
+    query = (
+        db.query(Email.id)
+        .outerjoin(Email.classification)
+        .filter(
+            (Classification.is_business_relevant == False)  # noqa: E712
+            | (Classification.relevance_category.in_([
+                "account_security_notification",
+                "system_notification",
+                "automated_notification",
+                "newsletter_marketing",
+                "spam_irrelevant",
+            ]))
+        )
+    )
+    if mid:
+        query = query.filter(Email.mailbox_id == mid)
+    else:
+        query = query.filter(Email.account_email == account_email)
+
+    target_email_ids = [row[0] for row in query.all()]
+    if not target_email_ids:
+        return {
+            "success": True,
+            "deleted_count": 0,
+            "message": "No non-business emails found to purge.",
+        }
+
+    # Delete relational children
+    db.query(ClassificationHistory).filter(ClassificationHistory.email_id.in_(target_email_ids)).delete(synchronize_session=False)
+    db.query(LeadActivityHistory).filter(LeadActivityHistory.email_id.in_(target_email_ids)).delete(synchronize_session=False)
+    db.query(Classification).filter(Classification.email_id.in_(target_email_ids)).delete(synchronize_session=False)
+    deleted_cnt = db.query(Email).filter(Email.id.in_(target_email_ids)).delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "success": True,
+        "deleted_count": deleted_cnt,
+        "message": f"Successfully removed {deleted_cnt} non-business notification emails from FlowShark.",
+    }

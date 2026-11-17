@@ -15,9 +15,12 @@ import {
   Building2,
   Briefcase,
   PieChart,
+  Trash2,
+  Play,
 } from 'lucide-react';
 import { DashboardSummary, Email, IndustryAnalyticsResponse } from '../types';
 import { Badge } from '../components/Badge';
+import { DemoEmailModal } from '../components/DemoEmailModal';
 import { api } from '../services/api';
 
 interface DashboardPageProps {
@@ -37,6 +40,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [batchMsg, setBatchMsg] = useState<string | null>(null);
   const [industryAnalytics, setIndustryAnalytics] = useState<IndustryAnalyticsResponse | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [cleaningNonBiz, setCleaningNonBiz] = useState(false);
+  const [cleanupToast, setCleanupToast] = useState<string | null>(null);
+
+  const handleCleanupNonBusiness = async () => {
+    if (!window.confirm('Are you sure you want to remove all non-business notifications, Google alerts, and newsletters from FlowShark?')) {
+      return;
+    }
+    try {
+      setCleaningNonBiz(true);
+      const res = await api.cleanupNonBusiness();
+      setCleanupToast(res.message);
+      onRefresh();
+      loadIndustryAnalytics();
+      setTimeout(() => setCleanupToast(null), 5000);
+    } catch (err: any) {
+      alert('Cleanup failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setCleaningNonBiz(false);
+    }
+  };
 
   useEffect(() => {
     loadIndustryAnalytics();
@@ -171,7 +195,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             FlowShark continuously monitors your Gmail inbox via non-destructive IMAP, runs NLP noise filtering, detects commercial signals, and structures inbound communications into sales pipeline stages.
           </p>
 
-          <div className="flex items-center space-x-3 pt-2">
+          <div className="flex items-center space-x-3 pt-2 flex-wrap gap-y-2">
+            <button
+              onClick={() => setShowDemoModal(true)}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-bold rounded-lg shadow-md transition-all flex items-center space-x-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Test Demo Email / AI Simulation</span>
+            </button>
             <button
               onClick={handleBatchClassify}
               disabled={batchClassifying}
@@ -387,17 +418,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
       {/* Recent Activity Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+        {cleanupToast && (
+          <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 text-xs text-emerald-800 font-semibold flex items-center justify-between animate-in fade-in">
+            <span>{cleanupToast}</span>
+            <button onClick={() => setCleanupToast(null)} className="text-emerald-600 hover:text-emerald-900 font-bold">
+              Dismiss
+            </button>
+          </div>
+        )}
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-y-3">
           <div>
             <h3 className="font-bold text-sm text-slate-900">Recent Synced Inbound Communications</h3>
-            <p className="text-xs text-slate-500">Live preview of synchronized emails and AI classification statuses</p>
+            <p className="text-xs text-slate-500">Live preview of synchronized business emails and AI classification statuses</p>
           </div>
-          <button
-            onClick={() => onNavigate('inbox')}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-          >
-            View All &rarr;
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleCleanupNonBusiness}
+              disabled={cleaningNonBiz}
+              className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded-lg transition-colors flex items-center space-x-1.5 disabled:opacity-50"
+              title="Purge all non-business notifications, Google alerts, and newsletters"
+            >
+              <Trash2 className={`w-3.5 h-3.5 ${cleaningNonBiz ? 'animate-spin' : ''}`} />
+              <span>{cleaningNonBiz ? 'Cleaning...' : 'Clean Up Non-Business Alerts'}</span>
+            </button>
+            <button
+              onClick={() => onNavigate('inbox')}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+            >
+              View All &rarr;
+            </button>
+          </div>
         </div>
 
         {summary?.recent_activity && summary.recent_activity.length > 0 ? (
@@ -472,6 +522,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         )}
       </div>
+
+      {/* Interactive AI Demo Email Simulator Modal */}
+      <DemoEmailModal
+        isOpen={showDemoModal}
+        onClose={() => setShowDemoModal(false)}
+        onEmailInjected={() => {
+          onRefresh();
+          loadIndustryAnalytics();
+        }}
+      />
     </div>
   );
 };

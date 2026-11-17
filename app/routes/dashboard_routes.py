@@ -33,6 +33,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
     include_in_schema=False,
 )
 def get_dashboard_summary(
+    business_only: bool = True,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> DashboardSummaryResponse:
@@ -110,8 +111,16 @@ def get_dashboard_summary(
     human_corrected_count = db.query(ClassificationHistory).filter(ClassificationHistory.mailbox_id == mid).count()
 
     # Recent 10 emails scoped strictly to active mailbox
+    # Filter by business relevance if requested (default: True to prevent system alerts from polluting pipeline preview)
+    recent_q = email_q
+    if business_only:
+        recent_q = recent_q.outerjoin(Email.classification).filter(
+            (Classification.is_business_relevant != False)  # noqa: E712
+            | (Classification.id.is_(None))
+        )
+
     recent_emails = (
-        email_q.order_by(Email.received_at.desc().nullslast(), Email.id.desc())
+        recent_q.order_by(Email.received_at.desc().nullslast(), Email.id.desc())
         .limit(10)
         .all()
     )

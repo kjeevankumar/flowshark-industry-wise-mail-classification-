@@ -100,6 +100,16 @@ export const api = {
     return res.data;
   },
 
+  deleteEmail: async (id: number): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.delete<{ success: boolean; message: string }>(`/api/emails/${id}`);
+    return res.data;
+  },
+
+  cleanupNonBusiness: async (): Promise<{ success: boolean; deleted_count: number; message: string }> => {
+    const res = await apiClient.post<{ success: boolean; deleted_count: number; message: string }>('/api/emails/cleanup-non-business');
+    return res.data;
+  },
+
   getEmailDetail: async (id: number): Promise<Email> => {
     const res = await apiClient.get<Email>(`/api/emails/${id}`);
     return res.data;
@@ -181,6 +191,22 @@ export const api = {
 
   backfillClassifications: async (): Promise<any> => {
     const res = await apiClient.post('/api/classification/backfill');
+    return res.data;
+  },
+
+  getDemoPresets: async (): Promise<{ presets: Record<string, any> }> => {
+    const res = await apiClient.get<{ presets: Record<string, any> }>('/api/classification/demo-presets');
+    return res.data;
+  },
+
+  simulateDemoEmail: async (payload: {
+    sender?: string;
+    subject?: string;
+    body?: string;
+    preset_key?: string;
+    inject_into_inbox?: boolean;
+  }): Promise<any> => {
+    const res = await apiClient.post('/api/classification/test-demo', payload);
     return res.data;
   },
 };

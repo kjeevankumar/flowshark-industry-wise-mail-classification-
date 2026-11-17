@@ -174,6 +174,12 @@ DEFAULT_INTENT_SIGNALS: Dict[str, List[str]] = {
         "approved the proposal",
         "proceed with the project",
         "signing the agreement",
+        "master services agreement",
+        "selected your proposal",
+        "selected flowshark",
+        "begin implementation",
+        "finalize the agreement",
+        "finalize the contract",
     ],
     "invoice": [
         "invoice attached",
@@ -306,12 +312,18 @@ class RuleBasedClassifier:
             relationship = "unknown"
 
         # 2. Determine Lead Stage
-        # Check if email contains explicit qualification indicators (requirements, scope, timeline)
+        # Check if email contains explicit qualification indicators (requirements, scope, timeline, budget)
         has_qualification_signals = any(
             re.search(r"\b" + re.escape(sig) + r"\b", full_text)
             for sig in [
                 "delivery timeline", "timeline", "scope of work", "features",
-                "requirements", "responsive website", "milestones", "scope"
+                "requirements", "responsive website", "milestones", "scope",
+                "approved the budget", "budget approved", "budget is approved",
+                "budget of", "approved budget", "allocated budget", "executive committee",
+                "board approved", "selected your proposal", "selected flowshark",
+                "onboarding agreement", "master services agreement", "msa",
+                "ready to proceed", "schedule a kickoff", "kickoff meeting",
+                "decision maker", "procurement approved"
             ]
         )
 
