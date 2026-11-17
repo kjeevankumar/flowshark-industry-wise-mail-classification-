@@ -424,16 +424,7 @@ def cleanup_non_business(
     from app.models.classification_model import ClassificationHistory
     from app.models.lead_model import LeadActivityHistory
 
-    mailbox_service = MailboxService(db=db, settings=settings)
-    active_mb = mailbox_service.get_active_mailbox()
-
-    if not active_mb and not settings.is_configured:
-        return {"success": True, "deleted_count": 0, "message": "No active mailbox configured."}
-
-    mid = active_mb.id if active_mb else None
-    account_email = active_mb.email_address if active_mb else settings.GMAIL_ADDRESS
-
-    # Query all non-business emails in active mailbox
+    # Find ALL non-business / security alert / system notification emails in the DB
     query = (
         db.query(Email.id)
         .outerjoin(Email.classification)
@@ -446,12 +437,19 @@ def cleanup_non_business(
                 "newsletter_marketing",
                 "spam_irrelevant",
             ]))
+            | (Email.sender.ilike("%no-reply@accounts.google.com%"))
+            | (Email.sender.ilike("%accounts.google.com%"))
+            | (Email.sender.ilike("%google-noreply@google.com%"))
+            | (Email.sender.ilike("%mailer-daemon@%"))
+            | (Email.subject.ilike("%security alert%"))
+            | (Email.subject.ilike("%2-step verification%"))
+            | (Email.subject.ilike("%finish setting up your windows%"))
+            | (Email.subject.ilike("%setting up your%"))
+            | (Email.subject.ilike("%app password%"))
+            | (Email.subject.ilike("%selfie video%"))
+            | (Email.subject.ilike("%delivery status notification%"))
         )
     )
-    if mid:
-        query = query.filter(Email.mailbox_id == mid)
-    else:
-        query = query.filter(Email.account_email == account_email)
 
     target_email_ids = [row[0] for row in query.all()]
     if not target_email_ids:

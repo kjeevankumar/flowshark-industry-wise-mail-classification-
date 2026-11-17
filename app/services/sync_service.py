@@ -246,6 +246,40 @@ class EmailSyncService:
                             mailbox="INBOX",
                         )
 
+                        # Filter out automated security notifications & system alerts at ingestion
+                        from app.services.relevance_detector import BusinessRelevanceDetector
+                        rel_detector = BusinessRelevanceDetector()
+                        rel_check = rel_detector.evaluate(
+                            sender=detail.sender,
+                            subject=detail.subject,
+                            body_text=detail.body_plain,
+                        )
+                        sender_lower = (detail.sender or "").lower()
+                        subj_lower = (detail.subject or "").lower()
+                        is_google_security = (
+                            "accounts.google.com" in sender_lower
+                            or "security alert" in subj_lower
+                            or "2-step verification" in subj_lower
+                            or "finish setting up your" in subj_lower
+                        )
+                        if is_google_security or (
+                            not rel_check.is_business_relevant
+                            and rel_check.relevance_category in (
+                                "account_security_notification",
+                                "system_notification",
+                                "automated_notification",
+                            )
+                        ):
+                            logger.info(
+                                "Ignoring non-business notification (%s) during sync: %s - %s",
+                                "google_security" if is_google_security else rel_check.relevance_category,
+                                detail.sender,
+                                detail.subject,
+                            )
+                            if uid_num > highest_committed_uid:
+                                highest_committed_uid = uid_num
+                            continue
+
                         # Parse received date
                         parsed_date = None
                         if detail.date:

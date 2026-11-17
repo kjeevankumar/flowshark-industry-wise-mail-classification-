@@ -37,26 +37,28 @@ export const InboxPage: React.FC<InboxPageProps> = ({
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [batchClassifying, setBatchClassifying] = useState(false);
   const [cleaningNonBiz, setCleaningNonBiz] = useState(false);
+  const [cleanupNotice, setCleanupNotice] = useState<string | null>(null);
 
   const handleDeleteSingle = async (emailId: number, subject: string) => {
-    if (!window.confirm(`Delete email "${subject}" from FlowShark?`)) return;
     try {
       await api.deleteEmail(emailId);
+      setCleanupNotice(`Removed email "${subject}".`);
       loadEmails(page, categoryFilter, searchTerm, false, industryFilter);
       onRefreshSummary();
+      setTimeout(() => setCleanupNotice(null), 4000);
     } catch (err: any) {
       alert('Delete failed: ' + (err.response?.data?.detail || err.message));
     }
   };
 
   const handleCleanupNonBusiness = async () => {
-    if (!window.confirm('Purge all non-business notifications, Google alerts, and newsletters from FlowShark?')) return;
     try {
       setCleaningNonBiz(true);
       const res = await api.cleanupNonBusiness();
-      alert(res.message);
+      setCleanupNotice(res.message);
       loadEmails(1, categoryFilter, searchTerm, false, industryFilter);
       onRefreshSummary();
+      setTimeout(() => setCleanupNotice(null), 5000);
     } catch (err: any) {
       alert('Cleanup failed: ' + (err.response?.data?.detail || err.message));
     } finally {
@@ -235,6 +237,16 @@ export const InboxPage: React.FC<InboxPageProps> = ({
         </div>
       )}
 
+      {/* Notification Toast */}
+      {cleanupNotice && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-xs text-emerald-800 font-semibold flex items-center justify-between animate-in fade-in">
+          <span>{cleanupNotice}</span>
+          <button onClick={() => setCleanupNotice(null)} className="text-emerald-600 hover:text-emerald-900 font-bold">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Main Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -266,17 +278,25 @@ export const InboxPage: React.FC<InboxPageProps> = ({
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="p-8 text-center text-slate-400">
+                  <td colSpan={12} className="p-8 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
                     <span>Loading emails...</span>
                   </td>
                 </tr>
               ) : data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-12 text-center text-slate-500">
+                  <td colSpan={12} className="p-12 text-center text-slate-500">
                     <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="font-semibold text-slate-700">No emails found</p>
-                    <p className="text-xs text-slate-400 mt-1">Try resetting search filters or synchronizing new emails.</p>
+                    <p className="font-semibold text-slate-700">
+                      {categoryFilter === 'system_notifications'
+                        ? 'Zero non-business alerts in database'
+                        : 'No emails found'}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {categoryFilter === 'system_notifications'
+                        ? 'All Google security notifications and system noise have been purged.'
+                        : 'Try resetting search filters or synchronizing new emails.'}
+                    </p>
                   </td>
                 </tr>
               ) : (

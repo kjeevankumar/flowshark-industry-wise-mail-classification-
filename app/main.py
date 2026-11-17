@@ -45,6 +45,17 @@ async def lifespan(app: FastAPI):
     except Exception as err:
         logger.error("Database initialization failed: %s", str(err))
 
+    # Automatically purge non-business security alerts on startup
+    try:
+        from app.db.session import SessionLocal
+        from app.routes.email_inbox_routes import cleanup_non_business
+        with SessionLocal() as db_session:
+            cleanup_res = cleanup_non_business(db=db_session, settings=settings)
+            if cleanup_res.get("deleted_count", 0) > 0:
+                logger.info("Startup auto-clean purged %d non-business alerts.", cleanup_res["deleted_count"])
+    except Exception as err:
+        logger.warning("Startup cleanup check failed: %s", str(err))
+
     if settings.is_configured:
         logger.info("Gmail account configured: %s", settings.masked_gmail_address)
     else:

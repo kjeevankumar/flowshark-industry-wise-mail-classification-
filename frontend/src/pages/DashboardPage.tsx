@@ -45,9 +45,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [cleanupToast, setCleanupToast] = useState<string | null>(null);
 
   const handleCleanupNonBusiness = async () => {
-    if (!window.confirm('Are you sure you want to remove all non-business notifications, Google alerts, and newsletters from FlowShark?')) {
-      return;
-    }
     try {
       setCleaningNonBiz(true);
       const res = await api.cleanupNonBusiness();
