@@ -216,6 +216,9 @@ def correct_classification(
 
     # Save previous state in audit trail
     previous_state = {
+        "relevance_category": getattr(record, "relevance_category", "unknown_review"),
+        "is_business_relevant": getattr(record, "is_business_relevant", True),
+        "pipeline_category": getattr(record, "pipeline_category", "needs_review"),
         "relationship": record.relationship,
         "intent": record.intent,
         "lead_stage": record.lead_stage,
@@ -228,6 +231,16 @@ def correct_classification(
     }
 
     corrected_state = {}
+    if correction.relevance_category is not None:
+        record.relevance_category = correction.relevance_category
+        corrected_state["relevance_category"] = correction.relevance_category
+    if correction.is_business_relevant is not None:
+        record.is_business_relevant = correction.is_business_relevant
+        corrected_state["is_business_relevant"] = correction.is_business_relevant
+    if correction.pipeline_category is not None:
+        record.pipeline_category = correction.pipeline_category
+        corrected_state["pipeline_category"] = correction.pipeline_category
+
     if correction.relationship:
         record.relationship = correction.relationship
         corrected_state["relationship"] = correction.relationship

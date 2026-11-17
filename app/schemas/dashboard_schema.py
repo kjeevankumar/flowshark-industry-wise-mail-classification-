@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ClassificationCorrectionRequest(BaseModel):
     """Payload to record a human correction to an email classification."""
+    relevance_category: Optional[str] = Field(None, examples=["business_enquiry"])
+    is_business_relevant: Optional[bool] = Field(None, examples=[True])
+    pipeline_category: Optional[str] = Field(None, examples=["new_leads"])
     relationship: Optional[str] = Field(None, examples=["existing_lead"])
     intent: Optional[str] = Field(None, examples=["negotiation"])
     lead_stage: Optional[str] = Field(None, examples=["negotiation"])
@@ -107,6 +110,12 @@ class ClassificationRead(BaseModel):
     key_signals: Optional[List[str]] = Field(default_factory=list)
     context_used: Optional[str] = None
     suggested_next_action: Optional[str] = None
+
+    # Business Relevance & Pipeline
+    relevance_category: Optional[str] = "unknown_review"
+    is_business_relevant: Optional[bool] = True
+    pipeline_category: Optional[str] = "needs_review"
+    supporting_evidence: Optional[List[str]] = Field(default_factory=list)
 
     # Industry Dimensions
     sender_industry: Optional[str] = "Unknown"
@@ -229,6 +238,7 @@ class DashboardSummaryResponse(BaseModel):
     purchase_orders_count: int
     invoices_count: int
     needs_review_count: int
+    non_business_count: int = 0
     human_corrected_count: int
     is_llm_active: bool
     active_llm_provider: str

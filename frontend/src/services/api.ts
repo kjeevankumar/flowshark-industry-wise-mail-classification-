@@ -86,6 +86,9 @@ export const api = {
     size?: number;
     search?: string;
     category?: string;
+    is_business_relevant?: boolean;
+    pipeline_category?: string;
+    relevance_category?: string;
     intent?: string;
     relationship?: string;
     lead_stage?: string;
@@ -125,6 +128,9 @@ export const api = {
   correctClassification: async (
     classificationId: number,
     correction: {
+      relevance_category?: string;
+      is_business_relevant?: boolean;
+      pipeline_category?: string;
       relationship?: string;
       intent?: string;
       lead_stage?: string;

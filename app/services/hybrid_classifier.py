@@ -51,6 +51,16 @@ class HybridClassifier:
 
     def classify_email(self, email_record: Email, audit_reclassification: bool = True) -> Classification:
         """Execute full context-aware classification pipeline for a single email record."""
+        # Check if manual correction exists and should be preserved
+        existing_class = (
+            self.db.query(Classification)
+            .filter(Classification.email_id == email_record.id)
+            .first()
+        )
+        if existing_class and existing_class.classification_method == "manual_correction" and audit_reclassification:
+            logger.info("Preserving manual correction for email id %s", email_record.id)
+            return existing_class
+
         # 1. Preprocess text
         preprocessed: PreprocessedEmailText = self.nlp.preprocess(
             body_plain=email_record.body_text,
@@ -60,6 +70,84 @@ class HybridClassifier:
 
         # 2. Retrieve rich conversational, sender, lead, and thread context
         context: ConversationContext = self.context_service.build_conversation_context(email_record)
+
+        # 3. Business Email Relevance Detection Layer
+        from app.services.relevance_detector import BusinessRelevanceDetector
+        rel_detector = BusinessRelevanceDetector()
+        rel_res = rel_detector.evaluate(
+            sender=email_record.sender,
+            subject=email_record.subject,
+            body_text=preprocessed.cleaned_body,
+            body_html=email_record.body_html,
+        )
+
+        # Non-business emails short-circuit: never enter lead pipelines or CRM contact/lead records
+        # However, if this email is from an ongoing CRM lead/customer, evaluate with conversation context
+        has_ongoing_lead_context = bool(context.has_context and context.contact_relationship in ["existing_lead", "existing_customer"])
+        if not rel_res.is_business_relevant and not has_ongoing_lead_context:
+            email_record.contact_id = None
+            email_record.lead_id = None
+            if existing_class:
+                existing_class.contact_id = None
+                existing_class.lead_id = None
+                existing_class.relevance_category = rel_res.relevance_category
+                existing_class.is_business_relevant = False
+                existing_class.pipeline_category = None
+                existing_class.relationship = "unknown"
+                existing_class.intent = "other"
+                existing_class.lead_stage = "unknown"
+                existing_class.confidence = rel_res.confidence
+                existing_class.classification_reason = rel_res.reason
+                existing_class.key_signals = rel_res.evidence
+                existing_class.supporting_evidence = rel_res.evidence
+                existing_class.context_used = "Non-business notification evaluation"
+                existing_class.suggested_next_action = "Archive or ignore non-business notification."
+                existing_class.sender_industry = "Not Applicable"
+                existing_class.target_industry = "Not Applicable"
+                existing_class.sub_industry = None
+                existing_class.business_activity = None
+                existing_class.industry_confidence = rel_res.confidence
+                existing_class.industry_reason = "Non-business notification; industry classification not applicable."
+                existing_class.industry_evidence = []
+                existing_class.industry_requires_review = False
+                existing_class.classification_method = "rule_based"
+                existing_class.requires_human_review = rel_res.needs_review
+                self.db.commit()
+                return existing_class
+            else:
+                new_cls = Classification(
+                    mailbox_id=email_record.mailbox_id,
+                    email_id=email_record.id,
+                    contact_id=None,
+                    lead_id=None,
+                    relevance_category=rel_res.relevance_category,
+                    is_business_relevant=False,
+                    pipeline_category=None,
+                    relationship="unknown",
+                    intent="other",
+                    lead_stage="unknown",
+                    confidence=rel_res.confidence,
+                    classification_reason=rel_res.reason,
+                    key_signals=rel_res.evidence,
+                    supporting_evidence=rel_res.evidence,
+                    context_used="Non-business notification evaluation",
+                    suggested_next_action="Archive or ignore non-business notification.",
+                    sender_industry="Not Applicable",
+                    target_industry="Not Applicable",
+                    sub_industry=None,
+                    business_activity=None,
+                    industry_confidence=rel_res.confidence,
+                    industry_reason="Non-business notification; industry classification not applicable.",
+                    industry_evidence=[],
+                    industry_requires_review=False,
+                    classification_method="rule_based",
+                    requires_human_review=rel_res.needs_review,
+                    model_provider="fallback",
+                    model_name="relevance_rule_engine",
+                )
+                self.db.add(new_cls)
+                self.db.commit()
+                return new_cls
 
         # 3. Rule-based signal evaluation with conversation context
         rule_signals: RuleSignalResult = self.rule_engine.evaluate(
@@ -257,7 +345,25 @@ class HybridClassifier:
 
                 email_record.lead_id = lead.id
 
-        # 9. Persistence and Audit Trail in Classification & ClassificationHistory
+        # 9. Lead Pipeline Category Determination
+        from app.services.pipeline_service import PipelineClassifier
+        pipeline_engine = PipelineClassifier()
+        pipe_res = pipeline_engine.assign_pipeline(
+            is_business_relevant=True,
+            relevance_category=output.relevance_category or "business_conversation",
+            relationship=final_relationship,
+            intent=final_intent,
+            lead_stage=final_lead_stage,
+            confidence=confidence,
+            has_existing_lead=bool(context and (context.lead_id or context.contact_relationship == "existing_lead")),
+            has_proposal=bool("proposal" in email_record.subject.lower() or "quotation" in email_record.subject.lower()),
+            is_reply=bool(context and context.is_reply),
+            has_thread=bool(context and context.has_context),
+            key_signals=output.key_signals,
+        )
+        final_pipeline_category = pipe_res.pipeline_category
+
+        # 10. Persistence and Audit Trail in Classification & ClassificationHistory
         existing_class = (
             self.db.query(Classification)
             .filter(Classification.email_id == email_record.id)
@@ -313,6 +419,10 @@ class HybridClassifier:
                 )
                 self.db.add(history_entry)
 
+            existing_class.relevance_category = output.relevance_category
+            existing_class.is_business_relevant = output.is_business_relevant
+            existing_class.pipeline_category = final_pipeline_category
+            existing_class.supporting_evidence = output.supporting_evidence or output.key_signals
             existing_class.mailbox_id = email_record.mailbox_id
             existing_class.contact_id = contact.id
             existing_class.lead_id = email_record.lead_id
@@ -346,6 +456,10 @@ class HybridClassifier:
                 email_id=email_record.id,
                 contact_id=contact.id,
                 lead_id=email_record.lead_id,
+                relevance_category=output.relevance_category,
+                is_business_relevant=output.is_business_relevant,
+                pipeline_category=final_pipeline_category,
+                supporting_evidence=output.supporting_evidence or output.key_signals,
                 relationship=final_relationship,
                 intent=final_intent,
                 lead_stage=final_lead_stage,

@@ -117,9 +117,12 @@ def list_emails(
         description=(
             "FlowShark dashboard category filter: "
             "'new_leads', 'negotiations', 'follow_ups', 'business_clarifications', "
-            "'existing_leads', 'purchase_orders', 'invoices', 'needs_review'"
+            "'existing_leads', 'purchase_orders', 'invoices', 'needs_review', 'system_notifications', 'non_business'"
         ),
     ),
+    is_business_relevant: Optional[bool] = Query(None, description="Direct filter on business relevance"),
+    pipeline_category: Optional[str] = Query(None, description="Direct filter on pipeline category"),
+    relevance_category: Optional[str] = Query(None, description="Direct filter on relevance category"),
     intent: Optional[str] = Query(None, description="Direct filter on classification intent"),
     relationship: Optional[str] = Query(None, description="Direct filter on relationship"),
     lead_stage: Optional[str] = Query(None, description="Direct filter on lead stage"),
@@ -151,11 +154,22 @@ def list_emails(
     industry_val = industry if isinstance(industry, str) else None
     sender_ind_val = sender_industry if isinstance(sender_industry, str) else None
     target_ind_val = target_industry if isinstance(target_industry, str) else None
+    pipe_cat_val = pipeline_category if isinstance(pipeline_category, str) else None
+    rel_cat_val = relevance_category if isinstance(relevance_category, str) else None
 
     # Search filter (scoped to active mailbox)
     if search_val and search_val.strip():
         term = f"%{search_val.strip()}%"
         query = query.filter((Email.subject.ilike(term)) | (Email.sender.ilike(term)))
+
+    # Direct relevance / pipeline filters
+    biz_rel_val = is_business_relevant if isinstance(is_business_relevant, bool) else None
+    if biz_rel_val is not None:
+        query = query.filter(Classification.is_business_relevant == biz_rel_val)
+    if pipe_cat_val:
+        query = query.filter(Classification.pipeline_category == pipe_cat_val)
+    if rel_cat_val:
+        query = query.filter(Classification.relevance_category == rel_cat_val)
 
     # Direct filters
     if intent_val:
@@ -176,28 +190,58 @@ def list_emails(
     if target_ind_val and target_ind_val.strip():
         query = query.filter(Classification.target_industry.ilike(target_ind_val.strip()))
 
-    # Category aggregate filters
+    # Category aggregate filters (Strictly scoped lead pipelines with backward compatibility)
     if category_val:
         cat = category_val.lower().strip()
         if cat == "new_leads":
             query = query.filter(
-                Classification.relationship == "new_contact",
-                Classification.intent == "new_enquiry",
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "new_leads")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.relationship == "new_contact") & (Classification.intent == "new_enquiry")),
             )
         elif cat == "negotiations":
-            query = query.filter(Classification.intent == "negotiation")
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "negotiations")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "negotiation")),
+            )
         elif cat == "follow_ups":
-            query = query.filter(Classification.intent == "follow_up")
-        elif cat == "business_clarifications":
-            query = query.filter(Classification.intent == "business_clarification")
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "follow_ups")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "follow_up")),
+            )
+        elif cat in ("business_clarifications", "clarifications"):
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "clarifications")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "business_clarification")),
+            )
         elif cat == "existing_leads":
-            query = query.filter(Classification.relationship == "existing_lead")
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "existing_leads")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.relationship == "existing_lead") & (~Classification.intent.in_(["new_enquiry", "negotiation", "follow_up", "business_clarification", "purchase_order", "invoice"]))),
+            )
         elif cat == "purchase_orders":
-            query = query.filter(Classification.intent == "purchase_order")
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "purchase_orders")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "purchase_order")),
+            )
         elif cat == "invoices":
-            query = query.filter(Classification.intent == "invoice")
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "invoices")
+                | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "invoice")),
+            )
         elif cat == "needs_review":
-            query = query.filter(Classification.requires_human_review == True)  # noqa: E712
+            query = query.filter(
+                (Classification.pipeline_category == "needs_review")
+                | (Classification.requires_human_review == True)  # noqa: E712
+            )
+        elif cat in ("system_notifications", "non_business", "automated_notifications"):
+            query = query.filter(Classification.is_business_relevant == False)  # noqa: E712
 
     page_num = page if isinstance(page, int) else 1
     size_num = size if isinstance(size, int) else 20

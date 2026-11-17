@@ -214,6 +214,8 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                 </th>
                 <th className="px-4 py-3">Sender</th>
                 <th className="px-4 py-3">Subject & Preview</th>
+                <th className="px-4 py-3">Relevance</th>
+                <th className="px-4 py-3">Pipeline</th>
                 <th className="px-4 py-3">Relationship</th>
                 <th className="px-4 py-3">Intent</th>
                 <th className="px-4 py-3">Lead Stage</th>
@@ -225,14 +227,14 @@ export const InboxPage: React.FC<InboxPageProps> = ({
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
+                  <td colSpan={11} className="p-8 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
                     <span>Loading emails...</span>
                   </td>
                 </tr>
               ) : data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-12 text-center text-slate-500">
+                  <td colSpan={11} className="p-12 text-center text-slate-500">
                     <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-semibold text-slate-700">No emails found</p>
                     <p className="text-xs text-slate-400 mt-1">Try resetting search filters or synchronizing new emails.</p>
@@ -268,7 +270,23 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                         <p className="text-[11px] text-slate-400 truncate mt-0.5">{email.snippet}</p>
                       </td>
                       <td className="px-4 py-3">
-                        {c ? <Badge type="relationship" value={c.relationship} /> : <span className="text-slate-400">Unclassified</span>}
+                        {c?.relevance_category ? (
+                          <Badge type="relevance" value={c.relevance_category} />
+                        ) : c ? (
+                          <Badge type="relevance" value={c.is_business_relevant ? 'business_conversation' : 'system_notification'} />
+                        ) : (
+                          <span className="text-slate-400">Unclassified</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {c?.pipeline_category ? (
+                          <Badge type="pipeline" value={c.pipeline_category} />
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {c ? <Badge type="relationship" value={c.relationship} /> : <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-4 py-3">
                         {c ? <Badge type="intent" value={c.intent} /> : <span className="text-slate-400">-</span>}

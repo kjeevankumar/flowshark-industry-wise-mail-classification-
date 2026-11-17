@@ -93,6 +93,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             )}
           </button>
+          <button onClick={() => onNavigate('inbox', 'system_notifications')} className={navClass('inbox', 'system_notifications')}>
+            <div className="flex items-center space-x-2.5">
+              <Mail className="w-4 h-4 text-slate-400" />
+              <span>System & Alerts</span>
+            </div>
+            {summary && (summary.non_business_count ?? 0) > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isNavActive('inbox', 'system_notifications') ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {summary.non_business_count}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Intelligence Categories */}

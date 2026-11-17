@@ -127,6 +127,14 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN industry_evidence JSON"))
                     if "industry_requires_review" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN industry_requires_review BOOLEAN DEFAULT 0"))
+                    if "relevance_category" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN relevance_category VARCHAR(50) DEFAULT 'business_enquiry'"))
+                    if "is_business_relevant" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN is_business_relevant BOOLEAN DEFAULT 1"))
+                    if "pipeline_category" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN pipeline_category VARCHAR(50)"))
+                    if "supporting_evidence" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN supporting_evidence JSON"))
 
                 # 4b. contacts columns
                 contact_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(contacts)")).fetchall()]
@@ -191,6 +199,17 @@ def init_db() -> None:
                         conn.execute(text("UPDATE classifications SET mailbox_id = :mid WHERE mailbox_id IS NULL"), {"mid": active_id})
                         conn.execute(text("UPDATE sync_state SET mailbox_id = :mid WHERE mailbox_id IS NULL"), {"mid": active_id})
                         conn.commit()
+        except Exception:
+            pass
+    elif "postgresql" in db_url or "postgres" in db_url:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS relevance_category VARCHAR(50) DEFAULT 'business_enquiry'"))
+                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS is_business_relevant BOOLEAN DEFAULT TRUE"))
+                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS pipeline_category VARCHAR(50)"))
+                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS supporting_evidence JSON"))
+                conn.commit()
         except Exception:
             pass
 

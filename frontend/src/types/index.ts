@@ -1,4 +1,4 @@
-export type Relationship = 'new_contact' | 'existing_lead' | 'existing_customer' | 'unknown';
+export type Relationship = 'new_contact' | 'existing_lead' | 'existing_customer' | 'unknown' | 'not_applicable';
 
 export type Intent =
   | 'new_enquiry'
@@ -8,7 +8,8 @@ export type Intent =
   | 'purchase_order'
   | 'invoice'
   | 'complaint'
-  | 'other';
+  | 'other'
+  | 'not_applicable';
 
 export type LeadStage =
   | 'new'
@@ -17,7 +18,31 @@ export type LeadStage =
   | 'negotiation'
   | 'won'
   | 'lost'
-  | 'unknown';
+  | 'unknown'
+  | 'not_applicable';
+
+export type RelevanceCategory =
+  | 'business_enquiry'
+  | 'business_conversation'
+  | 'customer_support'
+  | 'purchase_commercial'
+  | 'internal_communication'
+  | 'account_security_notification'
+  | 'system_notification'
+  | 'automated_notification'
+  | 'newsletter_marketing'
+  | 'spam_irrelevant'
+  | 'unknown_review';
+
+export type PipelineCategory =
+  | 'new_leads'
+  | 'negotiations'
+  | 'follow_ups'
+  | 'clarifications'
+  | 'existing_leads'
+  | 'purchase_orders'
+  | 'invoices'
+  | 'needs_review';
 
 export interface Contact {
   id: number;
@@ -100,6 +125,12 @@ export interface Classification {
   key_signals?: string[];
   context_used?: string;
   suggested_next_action?: string;
+
+  // Business Relevance & Pipeline
+  relevance_category?: RelevanceCategory | string;
+  is_business_relevant?: boolean;
+  pipeline_category?: PipelineCategory | string;
+  supporting_evidence?: string[];
 
   // Industry Dimensions (Section 6 & 8)
   sender_industry?: string;
@@ -199,6 +230,7 @@ export interface DashboardSummary {
   purchase_orders_count: number;
   invoices_count: number;
   needs_review_count: number;
+  non_business_count?: number;
   human_corrected_count: number;
   is_llm_active: boolean;
   active_llm_provider: string;

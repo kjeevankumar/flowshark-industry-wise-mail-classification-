@@ -123,6 +123,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       desc: 'Technical & scope questions',
     },
     {
+      title: 'Purchase Orders',
+      count: summary?.purchase_orders_count ?? 0,
+      icon: FileCheck,
+      color: 'teal',
+      bg: 'bg-teal-50 text-teal-600',
+      tab: 'inbox',
+      category: 'purchase_orders',
+      desc: 'POs & order agreements',
+    },
+    {
+      title: 'Invoices',
+      count: summary?.invoices_count ?? 0,
+      icon: Receipt,
+      color: 'violet',
+      bg: 'bg-violet-50 text-violet-600',
+      tab: 'inbox',
+      category: 'invoices',
+      desc: 'Payment & billing records',
+    },
+    {
       title: 'Needs Review',
       count: summary?.needs_review_count ?? 0,
       icon: AlertTriangle,
@@ -171,8 +191,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-3 gap-5">
+      {/* KPI Cards Grid (8 Lead Pipelines) */}
+      <div className="grid grid-cols-4 gap-4">
         {cards.map((card, i) => {
           const Icon = card.icon;
           return (
@@ -198,7 +218,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       </div>
 
       {/* Overview Stats Bar */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Total Synced In DB</span>
           <p className="text-xl font-bold text-slate-900 mt-1">{summary?.total_synced ?? 0}</p>
@@ -206,6 +226,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">AI Classified</span>
           <p className="text-xl font-bold text-indigo-600 mt-1">{summary?.total_classified ?? 0}</p>
+        </div>
+        <div onClick={() => onNavigate('inbox', 'system_notifications')} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-slate-300 transition-all">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Non-Business Alerts</span>
+          <p className="text-xl font-bold text-slate-600 mt-1">{summary?.non_business_count ?? 0}</p>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Human Corrections</span>

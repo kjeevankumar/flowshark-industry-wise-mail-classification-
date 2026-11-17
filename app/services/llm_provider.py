@@ -25,7 +25,7 @@ from app.services.rule_classifier import RuleBasedClassifier, RuleSignalResult
 logger = logging.getLogger("gmail_fastapi.llm")
 
 # Valid Enum Literal Types
-RelationshipType = Literal["new_contact", "existing_lead", "existing_customer", "unknown"]
+RelationshipType = Literal["new_contact", "existing_lead", "existing_customer", "unknown", "not_applicable"]
 IntentType = Literal[
     "new_enquiry",
     "negotiation",
@@ -35,6 +35,7 @@ IntentType = Literal[
     "invoice",
     "complaint",
     "other",
+    "not_applicable",
 ]
 LeadStageType = Literal[
     "new",
@@ -44,23 +45,42 @@ LeadStageType = Literal[
     "won",
     "lost",
     "unknown",
+    "not_applicable",
 ]
 
 
 class LLMClassificationOutput(BaseModel):
     """Pydantic validated structured JSON output from LLM classifiers."""
 
+    # Business Relevance Dimensions
+    relevance_category: str = Field(
+        default="business_enquiry",
+        description="Category: business_enquiry, business_conversation, customer_support, purchase_commercial, internal_communication, account_security_notification, system_notification, automated_notification, newsletter_marketing, spam_irrelevant, unknown_review",
+    )
+    is_business_relevant: bool = Field(
+        default=True,
+        description="Whether email represents a valid business lead or communication",
+    )
+    pipeline_category: Optional[str] = Field(
+        default=None,
+        description="Sales pipeline: new_leads, negotiations, follow_ups, clarifications, existing_leads, purchase_orders, invoices, needs_review, or null",
+    )
+    supporting_evidence: List[str] = Field(
+        default_factory=list,
+        description="Key supporting evidence phrases proving the classification",
+    )
+
     relationship: RelationshipType = Field(
         ...,
-        description="Relationship to sender: new_contact, existing_lead, existing_customer, unknown",
+        description="Relationship to sender: new_contact, existing_lead, existing_customer, unknown, not_applicable",
     )
     intent: IntentType = Field(
         ...,
-        description="Primary business intent: new_enquiry, negotiation, follow_up, business_clarification, purchase_order, invoice, complaint, other",
+        description="Primary business intent: new_enquiry, negotiation, follow_up, business_clarification, purchase_order, invoice, complaint, other, not_applicable",
     )
     lead_stage: LeadStageType = Field(
         ...,
-        description="Pipeline lead stage: new, qualified, proposal_sent, negotiation, won, lost, unknown",
+        description="Pipeline lead stage: new, qualified, proposal_sent, negotiation, won, lost, unknown, not_applicable",
     )
     confidence: float = Field(
         default=0.85,
@@ -255,7 +275,11 @@ class FallbackLLMProvider(BaseLLMProvider):
     def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or get_settings()
         self.rule_engine = RuleBasedClassifier()
+        from app.services.relevance_detector import BusinessRelevanceDetector
+        from app.services.pipeline_service import PipelineClassifier
         from app.services.industry_rule_classifier import IndustryRuleClassifier
+        self.relevance_detector = BusinessRelevanceDetector()
+        self.pipeline_classifier = PipelineClassifier()
         self.industry_engine = IndustryRuleClassifier()
 
     def classify_email(
@@ -266,7 +290,44 @@ class FallbackLLMProvider(BaseLLMProvider):
         rule_signals: Optional[RuleSignalResult] = None,
         context: Optional[Any] = None,
     ) -> LLMClassificationOutput:
-        """Classify using rule-based signals, conversation context, and NLP preprocessing heuristics."""
+        """Classify using relevance detection, rule signals, conversation context, and NLP heuristics."""
+        sender_email = getattr(context, "sender_email", "") if context else ""
+
+        # Step 1: Dedicated Business Email Relevance Detection
+        rel_res = self.relevance_detector.evaluate(
+            sender=sender_email,
+            subject=subject,
+            body_text=preprocessed.cleaned_body,
+        )
+
+        # If not business relevant, short-circuit and exclude from lead pipelines
+        if not rel_res.is_business_relevant:
+            return LLMClassificationOutput(
+                relevance_category=rel_res.relevance_category,
+                is_business_relevant=False,
+                pipeline_category=None,
+                relationship="unknown",
+                intent="other",
+                lead_stage="unknown",
+                confidence=rel_res.confidence,
+                classification_reason=rel_res.reason,
+                key_signals=rel_res.evidence,
+                supporting_evidence=rel_res.evidence,
+                context_used=None,
+                suggested_next_action="Archive or ignore non-business notification.",
+                requires_human_review=rel_res.needs_review,
+                classification_method="rule_based",
+                sender_industry="Not Applicable",
+                target_industry="Not Applicable",
+                sub_industry=None,
+                business_activity=None,
+                industry_confidence=rel_res.confidence,
+                industry_reason="Non-business notification; industry classification not applicable.",
+                industry_evidence=[],
+                industry_requires_review=False,
+            )
+
+        # Step 2: Context & Rule-based signal detection for business-relevant email
         has_thread = bool(
             (thread_context and thread_context.strip())
             or (context and context.has_context)
@@ -285,29 +346,6 @@ class FallbackLLMProvider(BaseLLMProvider):
             context=context,
         )
 
-        # Detect promotional / newsletter emails
-        if preprocessed.is_promotional:
-            return LLMClassificationOutput(
-                relationship="unknown",
-                intent="other",
-                lead_stage="unknown",
-                confidence=0.88,
-                classification_reason="Detected promotional newsletter or automated broadcast format.",
-                key_signals=["promotional markers", "unsubscribe header"],
-                context_used=rule_res.context_used or None,
-                suggested_next_action="Archive or ignore marketing newsletter.",
-                requires_human_review=False,
-                classification_method="rule_based",
-                sender_industry="Other",
-                target_industry="Unknown",
-                sub_industry="Other",
-                business_activity="Marketing newsletter / promotional broadcast",
-                industry_confidence=0.88,
-                industry_reason="Automated promotional announcement or newsletter format.",
-                industry_evidence=["promotional markers"],
-                industry_requires_review=False,
-            )
-
         # Evaluate Industry signals via IndustryRuleClassifier
         ind_res = self.industry_engine.evaluate(
             cleaned_body=preprocessed.cleaned_body,
@@ -317,48 +355,59 @@ class FallbackLLMProvider(BaseLLMProvider):
             context=context,
         )
 
+        # Step 3: Strict Lead Pipeline Assignment
+        pipe_res = self.pipeline_classifier.assign_pipeline(
+            is_business_relevant=True,
+            relevance_category=rel_res.relevance_category,
+            relationship=rule_res.relationship,
+            intent=rule_res.intent,
+            lead_stage=rule_res.lead_stage,
+            confidence=rule_res.confidence,
+            has_existing_lead=bool(context and context.lead_id),
+            has_proposal=bool("proposal" in subject.lower() or "quotation" in subject.lower()),
+            is_reply=is_reply,
+            has_thread=has_thread,
+            key_signals=rule_res.key_signals,
+        )
+
         # Determine context-aware suggested next action
-        if rule_res.intent == "follow_up":
+        if pipe_res.intent == "follow_up":
             if "progress" in subject.lower() or "progress" in preprocessed.cleaned_body.lower() or "website" in subject.lower():
                 suggested_action = "Share the current website development progress with the client."
             else:
                 suggested_action = "Check active proposal status and send update to the client."
-        elif rule_res.intent == "business_clarification":
-            if rule_res.relationship == "existing_customer":
+        elif pipe_res.intent == "business_clarification":
+            if pipe_res.relationship == "existing_customer":
                 suggested_action = "Clarify scope of requested modifications with the customer and provide timeline."
             else:
                 suggested_action = "Address client technical / scope questions and update documentation."
-        elif rule_res.intent == "negotiation":
+        elif pipe_res.intent == "negotiation":
             suggested_action = "Review requested terms with sales manager and respond with approved counter-offer."
-        elif rule_res.intent == "new_enquiry":
+        elif pipe_res.intent == "new_enquiry":
             suggested_action = "Send company introduction and request project requirements call."
-        elif rule_res.intent == "purchase_order":
+        elif pipe_res.intent == "purchase_order":
             suggested_action = "Acknowledge PO receipt and initiate order fulfillment."
-        elif rule_res.intent == "invoice":
+        elif pipe_res.intent == "invoice":
             suggested_action = "Verify invoice against records and forward to accounts department."
-        elif rule_res.intent == "complaint":
+        elif pipe_res.intent == "complaint":
             suggested_action = "Escalate to account manager for priority resolution within 4 hours."
         else:
             suggested_action = "Review message content for context."
 
-        # Calibrated human review rule:
-        # Confidence >= 0.85: auto-approved (requires_human_review = False)
-        # Below 0.85 or negations present: review recommended / needed
-        requires_review = (
-            rule_res.confidence < 0.85
-            or bool(rule_res.negations)
-        )
-
         return LLMClassificationOutput(
-            relationship=rule_res.relationship,  # type: ignore
-            intent=rule_res.intent,  # type: ignore
-            lead_stage=rule_res.lead_stage,  # type: ignore
-            confidence=rule_res.confidence,
-            classification_reason=rule_res.reason,
+            relevance_category=rel_res.relevance_category,
+            is_business_relevant=True,
+            pipeline_category=pipe_res.pipeline_category,
+            supporting_evidence=rel_res.evidence + rule_res.key_signals,
+            relationship=pipe_res.relationship,  # type: ignore
+            intent=pipe_res.intent,  # type: ignore
+            lead_stage=pipe_res.lead_stage,  # type: ignore
+            confidence=pipe_res.confidence,
+            classification_reason=pipe_res.reason,
             key_signals=rule_res.key_signals,
             context_used=rule_res.context_used or None,
             suggested_next_action=suggested_action,
-            requires_human_review=requires_review,
+            requires_human_review=pipe_res.needs_review,
             classification_method="rule_based",
             sender_industry=ind_res.sender_industry,
             target_industry=ind_res.target_industry,
@@ -451,6 +500,50 @@ Respond ONLY with the JSON object."""
             data["industry_confidence"] = ind_conf
             data["industry_requires_review"] = ind_conf < 0.85 or data.get("industry_requires_review", False)
 
+            # Validate against deterministic relevance detector
+            sender_email = getattr(context, "sender_email", "") if context else ""
+            rel_res = self.fallback.relevance_detector.evaluate(
+                sender=sender_email,
+                subject=subject,
+                body_text=preprocessed.cleaned_body,
+            )
+
+            if not rel_res.is_business_relevant:
+                data["relevance_category"] = rel_res.relevance_category
+                data["is_business_relevant"] = False
+                data["pipeline_category"] = None
+                data["relationship"] = "not_applicable"
+                data["intent"] = "not_applicable"
+                data["lead_stage"] = "not_applicable"
+                data["sender_industry"] = "Not Applicable"
+                data["target_industry"] = "Not Applicable"
+                data["sub_industry"] = None
+                data["business_activity"] = None
+                data["confidence"] = rel_res.confidence
+                data["classification_reason"] = rel_res.reason
+                data["supporting_evidence"] = rel_res.evidence
+            else:
+                data.setdefault("relevance_category", rel_res.relevance_category)
+                data.setdefault("is_business_relevant", True)
+                pipe_res = self.fallback.pipeline_classifier.assign_pipeline(
+                    is_business_relevant=True,
+                    relevance_category=data.get("relevance_category", "business_enquiry"),
+                    relationship=data.get("relationship", "new_contact"),
+                    intent=data.get("intent", "new_enquiry"),
+                    lead_stage=data.get("lead_stage", "new"),
+                    confidence=conf,
+                    has_existing_lead=bool(context and context.lead_id),
+                    has_proposal=bool("proposal" in subject.lower()),
+                    is_reply=bool(context and context.is_reply),
+                    has_thread=bool(context and context.has_context),
+                    key_signals=data.get("key_signals", []),
+                )
+                data["pipeline_category"] = pipe_res.pipeline_category
+                data["relationship"] = pipe_res.relationship
+                data["intent"] = pipe_res.intent
+                data["lead_stage"] = pipe_res.lead_stage
+                data["supporting_evidence"] = rel_res.evidence + data.get("key_signals", [])
+
             return LLMClassificationOutput(**data)
 
         except Exception as err:
@@ -511,6 +604,50 @@ class OpenAIProvider(BaseLLMProvider):
             ind_conf = float(data.get("industry_confidence", conf))
             data["industry_confidence"] = ind_conf
             data["industry_requires_review"] = ind_conf < 0.85 or data.get("industry_requires_review", False)
+
+            # Validate against deterministic relevance detector
+            sender_email = getattr(context, "sender_email", "") if context else ""
+            rel_res = self.fallback.relevance_detector.evaluate(
+                sender=sender_email,
+                subject=subject,
+                body_text=preprocessed.cleaned_body,
+            )
+
+            if not rel_res.is_business_relevant:
+                data["relevance_category"] = rel_res.relevance_category
+                data["is_business_relevant"] = False
+                data["pipeline_category"] = None
+                data["relationship"] = "not_applicable"
+                data["intent"] = "not_applicable"
+                data["lead_stage"] = "not_applicable"
+                data["sender_industry"] = "Not Applicable"
+                data["target_industry"] = "Not Applicable"
+                data["sub_industry"] = None
+                data["business_activity"] = None
+                data["confidence"] = rel_res.confidence
+                data["classification_reason"] = rel_res.reason
+                data["supporting_evidence"] = rel_res.evidence
+            else:
+                data.setdefault("relevance_category", rel_res.relevance_category)
+                data.setdefault("is_business_relevant", True)
+                pipe_res = self.fallback.pipeline_classifier.assign_pipeline(
+                    is_business_relevant=True,
+                    relevance_category=data.get("relevance_category", "business_enquiry"),
+                    relationship=data.get("relationship", "new_contact"),
+                    intent=data.get("intent", "new_enquiry"),
+                    lead_stage=data.get("lead_stage", "new"),
+                    confidence=conf,
+                    has_existing_lead=bool(context and context.lead_id),
+                    has_proposal=bool("proposal" in subject.lower()),
+                    is_reply=bool(context and context.is_reply),
+                    has_thread=bool(context and context.has_context),
+                    key_signals=data.get("key_signals", []),
+                )
+                data["pipeline_category"] = pipe_res.pipeline_category
+                data["relationship"] = pipe_res.relationship
+                data["intent"] = pipe_res.intent
+                data["lead_stage"] = pipe_res.lead_stage
+                data["supporting_evidence"] = rel_res.evidence + data.get("key_signals", [])
 
             return LLMClassificationOutput(**data)
         except Exception as err:

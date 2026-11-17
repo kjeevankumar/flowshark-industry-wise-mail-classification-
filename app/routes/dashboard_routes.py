@@ -72,20 +72,41 @@ def get_dashboard_summary(
     total_synced = email_q.count()
     total_classified = class_q.count()
 
-    # Scoped Category Counts
-    new_leads_count = (
-        class_q.filter(
-            Classification.relationship == "new_contact",
-            Classification.intent == "new_enquiry",
-        ).count()
-    )
-    negotiations_count = class_q.filter(Classification.intent == "negotiation").count()
-    follow_ups_count = class_q.filter(Classification.intent == "follow_up").count()
-    clarifications_count = class_q.filter(Classification.intent == "business_clarification").count()
-    existing_leads_count = class_q.filter(Classification.relationship == "existing_lead").count()
-    purchase_orders_count = class_q.filter(Classification.intent == "purchase_order").count()
-    invoices_count = class_q.filter(Classification.intent == "invoice").count()
-    needs_review_count = class_q.filter(Classification.requires_human_review == True).count()  # noqa: E712
+    # Scoped Category Counts - strictly business relevant for lead pipelines
+    biz_class_q = class_q.filter(Classification.is_business_relevant != False)  # noqa: E712
+    non_business_count = class_q.filter(Classification.is_business_relevant == False).count()  # noqa: E712
+
+    new_leads_count = biz_class_q.filter(
+        (Classification.pipeline_category == "new_leads")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.relationship == "new_contact") & (Classification.intent == "new_enquiry"))
+    ).count()
+    negotiations_count = biz_class_q.filter(
+        (Classification.pipeline_category == "negotiations")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "negotiation"))
+    ).count()
+    follow_ups_count = biz_class_q.filter(
+        (Classification.pipeline_category == "follow_ups")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "follow_up"))
+    ).count()
+    clarifications_count = biz_class_q.filter(
+        (Classification.pipeline_category == "clarifications")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "business_clarification"))
+    ).count()
+    existing_leads_count = biz_class_q.filter(
+        (Classification.pipeline_category == "existing_leads")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.relationship == "existing_lead") & (~Classification.intent.in_(["new_enquiry", "negotiation", "follow_up", "business_clarification", "purchase_order", "invoice"])))
+    ).count()
+    purchase_orders_count = biz_class_q.filter(
+        (Classification.pipeline_category == "purchase_orders")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "purchase_order"))
+    ).count()
+    invoices_count = biz_class_q.filter(
+        (Classification.pipeline_category == "invoices")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "invoice"))
+    ).count()
+    needs_review_count = biz_class_q.filter(
+        (Classification.pipeline_category == "needs_review") | (Classification.requires_human_review == True)
+    ).count()
     human_corrected_count = db.query(ClassificationHistory).filter(ClassificationHistory.mailbox_id == mid).count()
 
     # Recent 10 emails scoped strictly to active mailbox
@@ -109,6 +130,7 @@ def get_dashboard_summary(
         purchase_orders_count=purchase_orders_count,
         invoices_count=invoices_count,
         needs_review_count=needs_review_count,
+        non_business_count=non_business_count,
         human_corrected_count=human_corrected_count,
         is_llm_active=settings.is_llm_configured,
         active_llm_provider=settings.LLM_PROVIDER if settings.is_llm_configured else "fallback (rules + heuristics)",

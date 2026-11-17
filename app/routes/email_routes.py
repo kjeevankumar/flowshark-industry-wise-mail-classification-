@@ -281,6 +281,44 @@ async def switch_mailbox(
     return get_connection_details(db=db, settings=settings)
 
 
+@router.delete(
+    "/api/email/connection/{mailbox_id}",
+    response_model=ConnectionDetailsResponse,
+    summary="Safely Disconnect and Delete a Connected Mailbox",
+    description="Permanently removes a mailbox, stops its background sync, deletes its scoped emails, classifications, and cursors safely.",
+)
+async def delete_mailbox(
+    mailbox_id: int,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ConnectionDetailsResponse:
+    settings = _resolve_settings(settings)
+    mailbox_service = MailboxService(db=db, settings=settings)
+
+    target = mailbox_service.get_mailbox_by_id(mailbox_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Mailbox with ID {mailbox_id} not found.",
+        )
+
+    # If deleting active mailbox, stop worker first
+    if target.is_active:
+        worker = get_sync_worker(settings=settings)
+        await worker.stop(db=db)
+
+    # Perform scoped removal
+    mailbox_service.remove_mailbox(mailbox_id)
+
+    # Restart worker for newly active mailbox if any
+    active_mb = mailbox_service.get_active_mailbox()
+    if active_mb and settings.BACKGROUND_SYNC_ENABLED:
+        worker = get_sync_worker(settings=settings)
+        await worker.start()
+
+    return get_connection_details(db=db, settings=settings)
+
+
 # ==========================================
 # Configuration & Sync Status Endpoints
 # ==========================================

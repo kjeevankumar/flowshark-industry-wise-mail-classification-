@@ -6,14 +6,16 @@ from datetime import datetime, timezone
 import imaplib
 import logging
 import ssl
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.security import decrypt_credential, encrypt_credential
-from app.models.classification_model import Classification
+from app.models.classification_model import Classification, ClassificationHistory
+from app.models.contact_model import Contact
 from app.models.conversation_model import Conversation
 from app.models.email_model import Email
+from app.models.lead_model import Lead, LeadActivityHistory
 from app.models.mailbox_model import Mailbox
 from app.models.sync_model import SyncState
 from app.services.imap_service import IMAPAuthenticationError, IMAPConfigurationError, IMAPConnectionError
@@ -273,3 +275,116 @@ class MailboxService:
 
         logger.info("Switched active mailbox to ID %d (%s).", target.id, target.email_address)
         return target
+
+    def remove_mailbox(self, mailbox_id_or_email: Any) -> Dict[str, Any]:
+        """Safely and permanently remove a mailbox and all its scoped data.
+
+        Performs scoped deletion within a database transaction:
+        - Classifications & audit history
+        - Scoped conversations & sync state
+        - Scoped leads & activities
+        - Scoped contacts (not shared with other mailboxes)
+        - Scoped emails
+        - Mailbox credentials & record
+        - Switches active mailbox to another available mailbox or None
+        """
+        if isinstance(mailbox_id_or_email, int) or (isinstance(mailbox_id_or_email, str) and mailbox_id_or_email.isdigit()):
+            target = self.get_mailbox_by_id(int(mailbox_id_or_email))
+        else:
+            target = self.get_mailbox_by_email(str(mailbox_id_or_email))
+
+        if not target:
+            raise ValueError(f"Mailbox '{mailbox_id_or_email}' not found.")
+
+        target_id = target.id
+        target_email = target.email_address
+        was_active = target.is_active
+
+        logger.info("Initiating safe removal of mailbox ID %d (%s)...", target_id, target_email)
+
+        # 1. Collect all email IDs for this mailbox
+        email_ids = [
+            e[0] for e in self.db.query(Email.id).filter(
+                (Email.mailbox_id == target_id) | (Email.account_email.ilike(target_email))
+            ).all()
+        ]
+        emails_count = len(email_ids)
+
+        # 2. Delete ClassificationHistory
+        if email_ids:
+            self.db.query(ClassificationHistory).filter(
+                (ClassificationHistory.email_id.in_(email_ids)) | (ClassificationHistory.mailbox_id == target_id)
+            ).delete(synchronize_session=False)
+        else:
+            self.db.query(ClassificationHistory).filter(ClassificationHistory.mailbox_id == target_id).delete(synchronize_session=False)
+
+        # 3. Delete Classifications
+        if email_ids:
+            self.db.query(Classification).filter(
+                (Classification.email_id.in_(email_ids)) | (Classification.mailbox_id == target_id)
+            ).delete(synchronize_session=False)
+        else:
+            self.db.query(Classification).filter(Classification.mailbox_id == target_id).delete(synchronize_session=False)
+
+        # 4. Delete LeadActivityHistory
+        lead_ids = [
+            l[0] for l in self.db.query(Lead.id).filter(Lead.mailbox_id == target_id).all()
+        ]
+        if lead_ids:
+            self.db.query(LeadActivityHistory).filter(LeadActivityHistory.lead_id.in_(lead_ids)).delete(synchronize_session=False)
+
+        # 5. Delete Leads
+        self.db.query(Lead).filter(Lead.mailbox_id == target_id).delete(synchronize_session=False)
+
+        # 6. Delete Conversations
+        self.db.query(Conversation).filter(Conversation.mailbox_id == target_id).delete(synchronize_session=False)
+
+        # 7. Delete Contacts strictly belonging to this mailbox that have no other mailbox references
+        contacts = self.db.query(Contact).filter(Contact.mailbox_id == target_id).all()
+        for cont in contacts:
+            other_refs = self.db.query(Email).filter(
+                Email.contact_id == cont.id,
+                Email.mailbox_id != target_id,
+            ).count()
+            if other_refs == 0:
+                self.db.delete(cont)
+
+        # 8. Delete Emails
+        self.db.query(Email).filter(
+            (Email.mailbox_id == target_id) | (Email.account_email.ilike(target_email))
+        ).delete(synchronize_session=False)
+
+        # 9. Delete SyncState
+        self.db.query(SyncState).filter(
+            (SyncState.mailbox_id == target_id) | (SyncState.account_email.ilike(target_email))
+        ).delete(synchronize_session=False)
+
+        # 10. Delete Mailbox record
+        self.db.delete(target)
+        self.db.flush()
+
+        # 11. Reconcile active mailbox if the deleted one was active
+        new_active_mb = None
+        if was_active:
+            candidate = self.db.query(Mailbox).filter(Mailbox.id != target_id).order_by(Mailbox.id.asc()).first()
+            if candidate:
+                candidate.is_active = True
+                candidate.updated_at = datetime.now(timezone.utc)
+                new_active_mb = candidate.email_address
+                logger.info("Promoted Mailbox ID %d (%s) to active.", candidate.id, candidate.email_address)
+
+        self.db.commit()
+
+        logger.info(
+            "Successfully removed mailbox '%s' (%d emails deleted). Active mailbox is now: %s",
+            target_email,
+            emails_count,
+            new_active_mb or "None (disconnected)",
+        )
+        return {
+            "status": "success",
+            "removed_mailbox_id": target_id,
+            "removed_email": target_email,
+            "emails_deleted": emails_count,
+            "new_active_mailbox": new_active_mb,
+        }

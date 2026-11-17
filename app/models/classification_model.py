@@ -29,10 +29,16 @@ class Classification(Base):
     contact_id = Column(Integer, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
     lead_id = Column(Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # Business Relevance Dimensions
+    relevance_category = Column(String(50), nullable=True, default="business_enquiry", index=True)
+    is_business_relevant = Column(Boolean, nullable=True, default=True, index=True)
+    pipeline_category = Column(String(50), nullable=True, index=True)
+    supporting_evidence = Column(JSON, nullable=True)
+
     # Multi-dimensional classification fields
-    relationship = Column(String(50), nullable=False)  # new_contact, existing_lead, existing_customer, unknown
-    intent = Column(String(50), nullable=False)        # new_enquiry, negotiation, follow_up, business_clarification, purchase_order, invoice, complaint, other
-    lead_stage = Column(String(50), nullable=False)    # new, qualified, proposal_sent, negotiation, won, lost, unknown
+    relationship = Column(String(50), nullable=True)  # new_contact, existing_lead, existing_customer, unknown, not_applicable
+    intent = Column(String(50), nullable=True)        # new_enquiry, negotiation, follow_up, business_clarification, purchase_order, invoice, complaint, other, not_applicable
+    lead_stage = Column(String(50), nullable=True)    # new, qualified, proposal_sent, negotiation, won, lost, unknown, not_applicable
 
     confidence = Column(Float, nullable=False, default=0.0)
     classification_reason = Column(Text, nullable=True)

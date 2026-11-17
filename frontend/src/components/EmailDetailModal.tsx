@@ -43,6 +43,9 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
 
   // Correction form fields
+  const [corrRelevance, setCorrRelevance] = useState<string>('business_conversation');
+  const [corrPipeline, setCorrPipeline] = useState<string>('new_leads');
+  const [corrIsBiz, setCorrIsBiz] = useState<boolean>(true);
   const [corrRelationship, setCorrRelationship] = useState<string>('');
   const [corrIntent, setCorrIntent] = useState<string>('');
   const [corrStage, setCorrStage] = useState<string>('');
@@ -59,6 +62,9 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
   useEffect(() => {
     if (email) {
       if (email.classification) {
+        setCorrRelevance(email.classification.relevance_category || 'business_conversation');
+        setCorrPipeline(email.classification.pipeline_category || 'new_leads');
+        setCorrIsBiz(email.classification.is_business_relevant ?? true);
         setCorrRelationship(email.classification.relationship);
         setCorrIntent(email.classification.intent);
         setCorrStage(email.classification.lead_stage);
@@ -110,6 +116,9 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
     try {
       setSavingCorrection(true);
       await api.correctClassification(email.classification.id, {
+        relevance_category: corrRelevance,
+        pipeline_category: corrIsBiz ? corrPipeline : undefined,
+        is_business_relevant: corrIsBiz,
         relationship: corrRelationship,
         intent: corrIntent,
         lead_stage: corrStage,
@@ -226,8 +235,35 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
 
             {cls ? (
               <div className="space-y-4">
+                {/* Business Relevance & Pipeline */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Business Relevance</span>
+                    {cls.relevance_category ? (
+                      <Badge type="relevance" value={cls.relevance_category} />
+                    ) : (
+                      <Badge type="relevance" value={cls.is_business_relevant ? 'business_conversation' : 'system_notification'} />
+                    )}
+                  </div>
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Lead Pipeline</span>
+                    {cls.pipeline_category ? (
+                      <Badge type="pipeline" value={cls.pipeline_category} />
+                    ) : (
+                      <span className="text-xs text-slate-400 font-medium">Excluded from Pipelines</span>
+                    )}
+                  </div>
+                </div>
+
+                {cls.is_business_relevant === false && (
+                  <div className="text-xs bg-slate-50 border border-slate-200 text-slate-600 rounded-lg p-3">
+                    <span className="font-semibold text-slate-800 block mb-0.5">Non-Business Communication Filter:</span>
+                    This email is classified as a non-business notification ({cls.relevance_category || 'system_notification'}). It is excluded from sales pipelines, lead conversions, and CRM contact creation.
+                  </div>
+                )}
+
                 {/* 3 Taxonomy Dimensions */}
-                <div className="grid grid-cols-3 gap-3 pt-2">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Relationship</span>
                     <Badge type="relationship" value={cls.relationship} />
@@ -258,6 +294,22 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                       <span>Context Used From Previous Conversation:</span>
                     </div>
                     <p className="text-blue-700 leading-relaxed">{contextUsed}</p>
+                  </div>
+                )}
+
+                {/* Supporting Evidence */}
+                {cls.supporting_evidence && cls.supporting_evidence.length > 0 && (
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
+                      Supporting Evidence:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cls.supporting_evidence.map((ev, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium">
+                          {ev}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -378,6 +430,60 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
           {showCorrectionForm && (
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
               <h5 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Manual Classification Correction</h5>
+
+              {/* Relevance & Pipeline Controls */}
+              <div className="grid grid-cols-3 gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Business Relevant?</label>
+                  <select
+                    value={corrIsBiz ? 'true' : 'false'}
+                    onChange={(e) => setCorrIsBiz(e.target.value === 'true')}
+                    className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white"
+                  >
+                    <option value="true">Yes (Business Lead/Comms)</option>
+                    <option value="false">No (System/Alert/Newsletter)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Relevance Category</label>
+                  <select
+                    value={corrRelevance}
+                    onChange={(e) => setCorrRelevance(e.target.value)}
+                    className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white"
+                  >
+                    <option value="business_enquiry">Business Enquiry</option>
+                    <option value="business_conversation">Business Conversation</option>
+                    <option value="customer_support">Customer Support</option>
+                    <option value="purchase_commercial">Purchase / Commercial</option>
+                    <option value="internal_communication">Internal Communication</option>
+                    <option value="account_security_notification">Security Notification</option>
+                    <option value="system_notification">System Notification</option>
+                    <option value="automated_notification">Automated Notification</option>
+                    <option value="newsletter_marketing">Newsletter / Marketing</option>
+                    <option value="spam_irrelevant">Spam / Irrelevant</option>
+                    <option value="unknown_review">Unknown / Review</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Pipeline Category</label>
+                  <select
+                    value={corrPipeline}
+                    onChange={(e) => setCorrPipeline(e.target.value)}
+                    disabled={!corrIsBiz}
+                    className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white disabled:opacity-50"
+                  >
+                    <option value="new_leads">New Leads</option>
+                    <option value="negotiations">Negotiations</option>
+                    <option value="follow_ups">Follow-ups</option>
+                    <option value="clarifications">Clarifications</option>
+                    <option value="existing_leads">Existing Leads</option>
+                    <option value="purchase_orders">Purchase Orders</option>
+                    <option value="invoices">Invoices</option>
+                    <option value="needs_review">Needs Review</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-[11px] font-semibold text-slate-600 block mb-1">Relationship</label>
@@ -390,6 +496,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                     <option value="existing_lead">Existing Lead</option>
                     <option value="existing_customer">Existing Customer</option>
                     <option value="unknown">Unknown</option>
+                    <option value="not_applicable">Not Applicable</option>
                   </select>
                 </div>
                 <div>
@@ -407,6 +514,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                     <option value="invoice">Invoice</option>
                     <option value="complaint">Complaint</option>
                     <option value="other">Other / Noise</option>
+                    <option value="not_applicable">Not Applicable</option>
                   </select>
                 </div>
                 <div>
@@ -423,6 +531,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                     <option value="won">Won</option>
                     <option value="lost">Lost</option>
                     <option value="unknown">Unknown</option>
+                    <option value="not_applicable">Not Applicable</option>
                   </select>
                 </div>
               </div>

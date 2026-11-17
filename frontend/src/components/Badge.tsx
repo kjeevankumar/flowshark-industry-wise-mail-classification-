@@ -2,25 +2,98 @@ import React from 'react';
 import { Relationship, Intent, LeadStage } from '../types';
 
 interface BadgeProps {
-  type: 'relationship' | 'intent' | 'stage' | 'confidence' | 'method' | 'industry';
+  type: 'relationship' | 'intent' | 'stage' | 'confidence' | 'method' | 'industry' | 'relevance' | 'pipeline';
   value: string | number;
   className?: string;
 }
 
 export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => {
+  if (type === 'relevance') {
+    const val = String(value);
+    const styles: Record<string, string> = {
+      business_enquiry: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      business_conversation: 'bg-blue-50 text-blue-700 border-blue-200',
+      purchase_commercial: 'bg-teal-50 text-teal-700 border-teal-200',
+      customer_support: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      internal_communication: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      account_security_notification: 'bg-rose-50 text-rose-700 border-rose-200',
+      system_notification: 'bg-amber-50 text-amber-700 border-amber-200',
+      automated_notification: 'bg-slate-100 text-slate-600 border-slate-200',
+      newsletter_marketing: 'bg-purple-50 text-purple-700 border-purple-200',
+      spam_irrelevant: 'bg-zinc-100 text-zinc-600 border-zinc-200',
+      unknown_review: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+    };
+    const labels: Record<string, string> = {
+      business_enquiry: 'Business Enquiry',
+      business_conversation: 'Business Conversation',
+      purchase_commercial: 'Commercial / Order',
+      customer_support: 'Customer Support',
+      internal_communication: 'Internal Comms',
+      account_security_notification: 'Security Alert',
+      system_notification: 'System Alert',
+      automated_notification: 'Automated Alert',
+      newsletter_marketing: 'Newsletter / Marketing',
+      spam_irrelevant: 'Spam / Irrelevant',
+      unknown_review: 'Under Review',
+    };
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[val] || 'bg-slate-100 text-slate-600 border-slate-200'} ${className}`}>
+        {labels[val] || val.replace(/_/g, ' ')}
+      </span>
+    );
+  }
+
+  if (type === 'pipeline') {
+    const val = String(value);
+    const styles: Record<string, string> = {
+      new_leads: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      negotiations: 'bg-amber-50 text-amber-700 border-amber-200',
+      follow_ups: 'bg-sky-50 text-sky-700 border-sky-200',
+      clarifications: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      existing_leads: 'bg-blue-50 text-blue-700 border-blue-200',
+      purchase_orders: 'bg-teal-50 text-teal-700 border-teal-200',
+      invoices: 'bg-violet-50 text-violet-700 border-violet-200',
+      needs_review: 'bg-rose-50 text-rose-700 border-rose-200',
+    };
+    const labels: Record<string, string> = {
+      new_leads: 'New Lead',
+      negotiations: 'Negotiation',
+      follow_ups: 'Follow-up',
+      clarifications: 'Clarification',
+      existing_leads: 'Existing Lead',
+      purchase_orders: 'Purchase Order',
+      invoices: 'Invoice',
+      needs_review: 'Needs Review',
+    };
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[val] || 'bg-slate-100 text-slate-600 border-slate-200'} ${className}`}>
+        {labels[val] || val.replace(/_/g, ' ')}
+      </span>
+    );
+  }
+
   if (type === 'relationship') {
     const val = value as Relationship;
+    if (val === 'not_applicable') {
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-slate-50 text-slate-400 border-slate-200 ${className}`}>
+          N/A
+        </span>
+      );
+    }
     const styles: Record<Relationship, string> = {
       new_contact: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       existing_lead: 'bg-blue-50 text-blue-700 border-blue-200',
       existing_customer: 'bg-purple-50 text-purple-700 border-purple-200',
       unknown: 'bg-slate-100 text-slate-600 border-slate-200',
+      not_applicable: 'bg-slate-50 text-slate-400 border-slate-200',
     };
     const labels: Record<Relationship, string> = {
       new_contact: 'New Contact',
       existing_lead: 'Existing Lead',
       existing_customer: 'Existing Customer',
       unknown: 'Unknown',
+      not_applicable: 'N/A',
     };
     return (
       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[val] || styles.unknown} ${className}`}>
@@ -31,6 +104,13 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
 
   if (type === 'intent') {
     const val = value as Intent;
+    if (val === 'not_applicable') {
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-slate-50 text-slate-400 border-slate-200 ${className}`}>
+          N/A
+        </span>
+      );
+    }
     const styles: Record<Intent, string> = {
       new_enquiry: 'bg-indigo-50 text-indigo-700 border-indigo-200',
       negotiation: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -40,6 +120,7 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
       invoice: 'bg-violet-50 text-violet-700 border-violet-200',
       complaint: 'bg-rose-50 text-rose-700 border-rose-200',
       other: 'bg-slate-100 text-slate-600 border-slate-200',
+      not_applicable: 'bg-slate-50 text-slate-400 border-slate-200',
     };
     const labels: Record<Intent, string> = {
       new_enquiry: 'New Enquiry',
@@ -50,6 +131,7 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
       invoice: 'Invoice',
       complaint: 'Complaint',
       other: 'Other / News',
+      not_applicable: 'N/A',
     };
     return (
       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[val] || styles.other} ${className}`}>
@@ -60,6 +142,13 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
 
   if (type === 'stage') {
     const val = value as LeadStage;
+    if (val === 'not_applicable') {
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-slate-50 text-slate-400 border-slate-200 ${className}`}>
+          N/A
+        </span>
+      );
+    }
     const styles: Record<LeadStage, string> = {
       new: 'bg-blue-50 text-blue-700 border-blue-200',
       qualified: 'bg-teal-50 text-teal-700 border-teal-200',
@@ -68,6 +157,7 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
       won: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       lost: 'bg-rose-50 text-rose-700 border-rose-200',
       unknown: 'bg-slate-100 text-slate-600 border-slate-200',
+      not_applicable: 'bg-slate-50 text-slate-400 border-slate-200',
     };
     return (
       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[val] || styles.unknown} ${className}`}>
@@ -78,6 +168,13 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
 
   if (type === 'industry') {
     const str = String(value);
+    if (str === 'Not Applicable' || str === 'not_applicable') {
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-slate-50 text-slate-400 border-slate-200 ${className}`}>
+          N/A
+        </span>
+      );
+    }
     const styles: Record<string, string> = {
       'Healthcare': 'bg-emerald-50 text-emerald-700 border-emerald-200',
       'IT & Software': 'bg-indigo-50 text-indigo-700 border-indigo-200',
@@ -120,4 +217,3 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
     </span>
   );
 };
-
