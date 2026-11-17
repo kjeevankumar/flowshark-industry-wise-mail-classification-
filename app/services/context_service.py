@@ -1,0 +1,407 @@
+"""Conversation Context and Sender Relationship Intelligence Service.
+
+Handles:
+- Sender email normalization (RFC 2822 parsing, lowercase address extraction).
+- Multi-signal thread retrieval (Gmail X-GM-THRID, RFC In-Reply-To, References, Message-ID).
+- Sender history retrieval (prior messages from same sender within mailbox).
+- Contact and Lead memory retrieval (existing relationship, current lead stage, business context).
+- Chronological context assembly for hybrid & LLM classification.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from email.utils import parseaddr
+import logging
+import re
+from typing import Any, Dict, List, Optional, Set, Tuple
+from sqlalchemy.orm import Session
+
+from app.models.classification_model import Classification
+from app.models.contact_model import Contact
+from app.models.conversation_model import Conversation
+from app.models.email_model import Email
+from app.models.lead_model import Lead, LeadActivityHistory
+
+logger = logging.getLogger("gmail_fastapi.context_service")
+
+
+def normalize_sender_address(raw_sender: Optional[str]) -> Tuple[str, str]:
+    """Extract normalized (clean_email, display_name) from raw From header.
+
+    Examples:
+        '"G1 Digitalizing" <g1digitalizing@gmail.com>' -> ('g1digitalizing@gmail.com', 'G1 Digitalizing')
+        'user@example.com' -> ('user@example.com', 'user')
+    """
+    if not raw_sender:
+        return "", ""
+    name, addr = parseaddr(raw_sender)
+    clean_addr = addr.strip().lower()
+    clean_name = name.strip() or (clean_addr.split("@")[0] if "@" in clean_addr else "")
+    return clean_addr, clean_name
+
+
+def extract_message_ids(header_text: Optional[str]) -> List[str]:
+    """Extract individual Message-IDs from In-Reply-To or References headers."""
+    if not header_text:
+        return []
+    # Match patterns like <anything@anything>
+    matches = re.findall(r"<([^>]+)>", header_text)
+    if matches:
+        return [f"<{m.strip()}>" for m in matches]
+    # Fallback to splitting whitespace if no angle brackets
+    return [h.strip() for h in header_text.split() if h.strip()]
+
+
+@dataclass
+class ConversationContext:
+    """Structured context assembled for classifying an email."""
+    has_context: bool = False
+    sender_email: str = ""
+    sender_name: str = ""
+    contact_id: Optional[int] = None
+    contact_relationship: str = "unknown"  # new_contact, existing_lead, existing_customer, unknown
+    contact_lead_stage: str = "unknown"
+    contact_company: Optional[str] = None
+    contact_business_context: Optional[str] = None
+    contact_industry: Optional[str] = None
+    contact_sub_industry: Optional[str] = None
+
+    lead_id: Optional[int] = None
+    lead_title: Optional[str] = None
+    lead_stage: str = "unknown"
+    lead_business_context: Optional[str] = None
+    lead_target_industry: Optional[str] = None
+    lead_sub_industry: Optional[str] = None
+
+    prior_emails: List[Dict[str, Any]] = field(default_factory=list)
+    prior_classifications: List[Dict[str, Any]] = field(default_factory=list)
+    is_reply: bool = False
+    is_same_sender_continuation: bool = False
+    context_summary: str = ""
+    context_used: str = ""
+
+
+class ContextService:
+    """Manages sender memory, contact entities, lead records, and conversation context."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_or_create_contact(
+        self,
+        raw_sender: str,
+        mailbox_id: Optional[int] = None,
+        initial_relationship: str = "unknown",
+        initial_stage: str = "unknown",
+        business_context: Optional[str] = None,
+        industry: Optional[str] = None,
+        sub_industry: Optional[str] = None,
+    ) -> Contact:
+        """Find or create a Contact record for a normalized email address."""
+        clean_email, display_name = normalize_sender_address(raw_sender)
+        if not clean_email:
+            clean_email = (raw_sender or "unknown").strip().lower()
+            display_name = raw_sender or "Unknown"
+
+        query = self.db.query(Contact).filter(Contact.email_address == clean_email)
+        if mailbox_id is not None:
+            query = query.filter(Contact.mailbox_id == mailbox_id)
+        contact = query.first()
+
+        if not contact:
+            # Infer company name if display name has company indicators or multiple words
+            company_name = None
+            if display_name and not display_name.lower().endswith("@gmail.com"):
+                company_name = display_name
+
+            contact = Contact(
+                mailbox_id=mailbox_id,
+                email_address=clean_email,
+                name=display_name,
+                company_name=company_name,
+                relationship_type=initial_relationship,
+                current_lead_stage=initial_stage,
+                business_context=business_context,
+                industry=industry or "Unknown",
+                sub_industry=sub_industry,
+            )
+            self.db.add(contact)
+            self.db.flush()
+        else:
+            # Update display name or company name if better info is provided
+            if display_name and not contact.name:
+                contact.name = display_name
+            if business_context and not contact.business_context:
+                contact.business_context = business_context
+            if industry and industry != "Unknown" and getattr(contact, "industry", "Unknown") == "Unknown":
+                contact.industry = industry
+            if sub_industry and not getattr(contact, "sub_industry", None):
+                contact.sub_industry = sub_industry
+
+        return contact
+
+    def get_or_create_lead_for_contact(
+        self,
+        contact: Contact,
+        title: str,
+        initial_stage: str = "new",
+        business_context: Optional[str] = None,
+        mailbox_id: Optional[int] = None,
+        target_industry: Optional[str] = None,
+        sub_industry: Optional[str] = None,
+    ) -> Lead:
+        """Find active lead or create a new lead opportunity for a contact."""
+        # Query active lead (not closed as lost/won or most recent active)
+        active_lead = (
+            self.db.query(Lead)
+            .filter(
+                Lead.contact_id == contact.id,
+                Lead.status.notin_(["won", "lost"]),
+            )
+            .order_by(Lead.updated_at.desc())
+            .first()
+        )
+
+        if active_lead:
+            # If lead already exists, enrich business context if needed
+            if business_context and not active_lead.business_context:
+                active_lead.business_context = business_context
+            if target_industry and target_industry != "Unknown" and getattr(active_lead, "target_industry", "Unknown") == "Unknown":
+                active_lead.target_industry = target_industry
+            if sub_industry and not getattr(active_lead, "sub_industry", None):
+                active_lead.sub_industry = sub_industry
+            return active_lead
+
+        # Otherwise check if there is any lead at all
+        any_lead = (
+            self.db.query(Lead)
+            .filter(Lead.contact_id == contact.id)
+            .order_by(Lead.updated_at.desc())
+            .first()
+        )
+        if any_lead and any_lead.status in ["won", "lost"] and initial_stage in ["won", "lost", "unknown"]:
+            return any_lead
+
+        # Create new lead opportunity
+        clean_title = title.strip() or f"Enquiry from {contact.name or contact.email_address}"
+        # Strip prefixes like Re: or Fwd:
+        clean_title = re.sub(r"^(re|fwd|fw):\s*", "", clean_title, flags=re.IGNORECASE).strip()
+
+        lead = Lead(
+            mailbox_id=mailbox_id or contact.mailbox_id,
+            contact_id=contact.id,
+            title=clean_title,
+            status=initial_stage if initial_stage != "unknown" else "new",
+            business_context=business_context,
+            source="email",
+            target_industry=target_industry or "Unknown",
+            sub_industry=sub_industry,
+        )
+        self.db.add(lead)
+        self.db.flush()
+
+        # Record activity
+        activity = LeadActivityHistory(
+            mailbox_id=mailbox_id or contact.mailbox_id,
+            lead_id=lead.id,
+            contact_id=contact.id,
+            activity_type="lead_created",
+            to_stage=lead.status,
+            description=f"Created lead '{clean_title}' from email interaction.",
+        )
+        self.db.add(activity)
+
+        return lead
+
+    def build_conversation_context(self, email_record: Email) -> ConversationContext:
+        """Retrieve full conversational, sender, lead, and thread context for an email."""
+        clean_email, display_name = normalize_sender_address(email_record.sender)
+
+        # 1. Fetch Contact record if exists
+        contact = None
+        if clean_email:
+            contact_q = self.db.query(Contact).filter(Contact.email_address == clean_email)
+            if email_record.mailbox_id is not None:
+                contact_q = contact_q.filter(Contact.mailbox_id == email_record.mailbox_id)
+            contact = contact_q.first()
+
+        # 2. Fetch associated Lead if exists
+        lead = None
+        if contact:
+            # Find active lead or most recent lead
+            lead = (
+                self.db.query(Lead)
+                .filter(Lead.contact_id == contact.id)
+                .order_by(Lead.updated_at.desc())
+                .first()
+            )
+
+        # 3. Retrieve prior emails using multi-signal strategy:
+        # a) Gmail thread ID
+        # b) RFC In-Reply-To / References
+        # c) Normalized sender address history
+        prior_emails_dict: Dict[int, Email] = {}
+
+        # a) By Gmail thread ID
+        if email_record.gmail_thread_id:
+            th_q = self.db.query(Email).filter(
+                Email.gmail_thread_id == email_record.gmail_thread_id,
+                Email.id != email_record.id,
+            )
+            if email_record.mailbox_id is not None:
+                th_q = th_q.filter(Email.mailbox_id == email_record.mailbox_id)
+            for em in th_q.all():
+                prior_emails_dict[em.id] = em
+
+        # b) By RFC In-Reply-To and References
+        rfc_ids: Set[str] = set()
+        if email_record.in_reply_to:
+            rfc_ids.update(extract_message_ids(email_record.in_reply_to))
+        if email_record.references_header:
+            rfc_ids.update(extract_message_ids(email_record.references_header))
+
+        if rfc_ids:
+            rfc_q = self.db.query(Email).filter(
+                Email.message_id.in_(list(rfc_ids)),
+                Email.id != email_record.id,
+            )
+            if email_record.mailbox_id is not None:
+                rfc_q = rfc_q.filter(Email.mailbox_id == email_record.mailbox_id)
+            for em in rfc_q.all():
+                prior_emails_dict[em.id] = em
+
+        # c) By normalized sender address history
+        if clean_email:
+            sender_q = self.db.query(Email).filter(
+                Email.sender.ilike(f"%{clean_email}%"),
+                Email.id != email_record.id,
+            )
+            if email_record.mailbox_id is not None:
+                sender_q = sender_q.filter(Email.mailbox_id == email_record.mailbox_id)
+            # Fetch up to 10 previous emails from same sender
+            for em in sender_q.order_by(Email.received_at.asc(), Email.id.asc()).limit(10).all():
+                prior_emails_dict[em.id] = em
+
+        # Sort all prior emails chronologically (filtering out those received after current email if timestamps exist)
+        candidate_list = list(prior_emails_dict.values())
+        if email_record.received_at:
+            candidate_list = [
+                em for em in candidate_list
+                if (em.received_at is None or em.received_at <= email_record.received_at)
+                and em.id < (email_record.id or 999999999)
+            ]
+        else:
+            candidate_list = [
+                em for em in candidate_list
+                if em.id < (email_record.id or 999999999)
+            ]
+
+        candidate_list.sort(key=lambda x: (x.received_at or datetime.min, x.id or 0))
+
+        # Check reply status
+        is_reply = bool(
+            email_record.subject.lower().startswith("re:")
+            or email_record.in_reply_to
+            or (email_record.references_header and email_record.references_header.strip())
+        )
+
+        has_context = bool(candidate_list or contact or lead)
+        is_same_sender = any(
+            normalize_sender_address(em.sender)[0] == clean_email
+            for em in candidate_list
+        )
+
+        # Extract classifications for prior emails
+        prior_emails_info: List[Dict[str, Any]] = []
+        prior_classifications_info: List[Dict[str, Any]] = []
+
+        context_lines: List[str] = []
+
+        if contact:
+            rel = contact.relationship_type
+            stage = contact.current_lead_stage
+            ctx = contact.business_context or ""
+            lead_info = f", Lead: '{lead.title}' ({lead.status})" if lead else ""
+            context_lines.append(
+                f"[Contact Memory] Sender '{contact.name or clean_email}' <{clean_email}> is {rel.upper()} (Stage: {stage.upper()}){lead_info}. {ctx}"
+            )
+
+        context_used_fragments: List[str] = []
+
+        # Take up to last 4 preceding messages for prompt context
+        for em in candidate_list[-4:]:
+            clean_text = (em.snippet or em.body_text or "")[:180].replace("\n", " ").strip()
+            em_date = str(em.received_at)[:19] if em.received_at else "Prior"
+
+            # Query classification for prior email
+            cls_q = self.db.query(Classification).filter(Classification.email_id == em.id).first()
+            cls_summary = ""
+            if cls_q:
+                ind_str = f" | {getattr(cls_q, 'sender_industry', 'Unknown')} -> {getattr(cls_q, 'target_industry', 'Unknown')}" if getattr(cls_q, 'target_industry', None) else ""
+                cls_summary = f" [Classified as: {cls_q.relationship} | {cls_q.intent} | {cls_q.lead_stage}{ind_str}]"
+                prior_classifications_info.append({
+                    "email_id": em.id,
+                    "relationship": cls_q.relationship,
+                    "intent": cls_q.intent,
+                    "lead_stage": cls_q.lead_stage,
+                    "sender_industry": getattr(cls_q, "sender_industry", "Unknown"),
+                    "target_industry": getattr(cls_q, "target_industry", "Unknown"),
+                    "sub_industry": getattr(cls_q, "sub_industry", None),
+                    "reason": cls_q.classification_reason,
+                })
+
+            context_lines.append(
+                f"[{em_date}] From: {em.sender} | Subject: '{em.subject}'{cls_summary} | Preview: {clean_text}"
+            )
+
+            prior_emails_info.append({
+                "id": em.id,
+                "sender": em.sender,
+                "subject": em.subject,
+                "received_at": str(em.received_at) if em.received_at else None,
+                "snippet": clean_text,
+                "gmail_thread_id": em.gmail_thread_id,
+            })
+
+        # Formulate context_used description
+        if contact and contact.relationship_type != "unknown":
+            context_used_fragments.append(
+                f"Known contact ({contact.relationship_type}, stage: {contact.current_lead_stage})"
+            )
+        if lead:
+            context_used_fragments.append(
+                f"Associated lead '{lead.title}' in stage '{lead.status}'"
+            )
+        if candidate_list:
+            last_prior = candidate_list[-1]
+            context_used_fragments.append(
+                f"{len(candidate_list)} prior email(s) found (last: '{last_prior.subject}')"
+            )
+
+        context_used = "; ".join(context_used_fragments) if context_used_fragments else "None (first contact or isolated email)"
+        context_summary = "\n".join(context_lines)
+
+        return ConversationContext(
+            has_context=has_context,
+            sender_email=clean_email,
+            sender_name=display_name,
+            contact_id=contact.id if contact else None,
+            contact_relationship=contact.relationship_type if contact else "unknown",
+            contact_lead_stage=contact.current_lead_stage if contact else "unknown",
+            contact_company=contact.company_name if contact else None,
+            contact_business_context=contact.business_context if contact else None,
+            contact_industry=getattr(contact, "industry", None) if contact else None,
+            contact_sub_industry=getattr(contact, "sub_industry", None) if contact else None,
+            lead_id=lead.id if lead else None,
+            lead_title=lead.title if lead else None,
+            lead_stage=lead.status if lead else "unknown",
+            lead_business_context=lead.business_context if lead else None,
+            lead_target_industry=getattr(lead, "target_industry", None) if lead else None,
+            lead_sub_industry=getattr(lead, "sub_industry", None) if lead else None,
+            prior_emails=prior_emails_info,
+            prior_classifications=prior_classifications_info,
+            is_reply=is_reply,
+            is_same_sender_continuation=is_same_sender,
+            context_summary=context_summary,
+            context_used=context_used,
+        )
