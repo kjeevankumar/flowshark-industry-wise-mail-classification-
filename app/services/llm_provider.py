@@ -402,7 +402,7 @@ Respond ONLY with the JSON object."""
     ) -> LLMClassificationOutput:
         try:
             from google import genai
-            client = genai.Client(api_key=self.api_key)
+            client = genai.Client(api_key=self.api_key, http_options={"api_version": "v1beta"})
 
             user_prompt = self._build_prompt(subject, preprocessed, thread_context, rule_signals, context)
             response = client.models.generate_content(

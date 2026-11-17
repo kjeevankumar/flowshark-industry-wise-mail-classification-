@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
+from app.core.datetime_utils import safe_datetime_gt, to_utc_naive
 from app.models.classification_model import Classification, ClassificationHistory
 from app.models.contact_model import Contact
 from app.models.conversation_model import Conversation
@@ -194,7 +195,7 @@ class HybridClassifier:
         if final_lead_stage != "unknown":
             contact.current_lead_stage = final_lead_stage
         if email_record.received_at:
-            contact.last_interaction_at = email_record.received_at
+            contact.last_interaction_at = to_utc_naive(email_record.received_at)
         if final_sender_industry != "Unknown" and industry_confidence >= 0.80:
             if not getattr(contact, "industry", None) or contact.industry == "Unknown":
                 contact.industry = final_sender_industry
@@ -406,7 +407,7 @@ class HybridClassifier:
                 primary_contact=email_record.sender,
                 subject=email_record.subject,
                 message_count=1,
-                last_message_at=email_record.received_at or datetime.now(timezone.utc),
+                last_message_at=to_utc_naive(email_record.received_at) or to_utc_naive(datetime.now(timezone.utc)),
                 relationship=relationship,
                 current_lead_stage=lead_stage,
             )
@@ -416,8 +417,8 @@ class HybridClassifier:
             if lead:
                 conv.lead_id = lead.id
             conv.message_count += 1
-            if email_record.received_at and (not conv.last_message_at or email_record.received_at > conv.last_message_at):
-                conv.last_message_at = email_record.received_at
+            if email_record.received_at and (not conv.last_message_at or safe_datetime_gt(email_record.received_at, conv.last_message_at)):
+                conv.last_message_at = to_utc_naive(email_record.received_at)
 
             if relationship != "unknown":
                 conv.relationship = relationship

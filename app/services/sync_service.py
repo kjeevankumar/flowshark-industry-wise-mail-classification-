@@ -19,6 +19,7 @@ from pydantic import SecretStr
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
+from app.core.datetime_utils import safe_datetime_gt, to_utc_naive
 from app.models.classification_model import Classification
 from app.models.conversation_model import Conversation
 from app.models.email_model import Email
@@ -249,9 +250,11 @@ class EmailSyncService:
                         parsed_date = None
                         if detail.date:
                             try:
-                                parsed_date = parsedate_to_datetime(detail.date)
+                                parsed_date = to_utc_naive(parsedate_to_datetime(detail.date))
                             except Exception:
-                                parsed_date = datetime.now(timezone.utc)
+                                parsed_date = to_utc_naive(datetime.now(timezone.utc))
+                        else:
+                            parsed_date = to_utc_naive(datetime.now(timezone.utc))
 
                         email_row = Email(
                             mailbox_id=self.mailbox_id,
@@ -295,7 +298,7 @@ class EmailSyncService:
                             self.db.add(conv)
                         else:
                             conv.message_count += 1
-                            if parsed_date and (not conv.last_message_at or parsed_date > conv.last_message_at):
+                            if parsed_date and (not conv.last_message_at or safe_datetime_gt(parsed_date, conv.last_message_at)):
                                 conv.last_message_at = parsed_date
 
                         # Commit the email to database BEFORE classification

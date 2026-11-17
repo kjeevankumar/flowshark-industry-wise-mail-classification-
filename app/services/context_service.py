@@ -16,6 +16,8 @@ import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
+from app.core.datetime_utils import safe_datetime_le, safe_sort_key
+
 from app.models.classification_model import Classification
 from app.models.contact_model import Contact
 from app.models.conversation_model import Conversation
@@ -287,7 +289,7 @@ class ContextService:
         if email_record.received_at:
             candidate_list = [
                 em for em in candidate_list
-                if (em.received_at is None or em.received_at <= email_record.received_at)
+                if (em.received_at is None or safe_datetime_le(em.received_at, email_record.received_at))
                 and em.id < (email_record.id or 999999999)
             ]
         else:
@@ -296,7 +298,7 @@ class ContextService:
                 if em.id < (email_record.id or 999999999)
             ]
 
-        candidate_list.sort(key=lambda x: (x.received_at or datetime.min, x.id or 0))
+        candidate_list.sort(key=lambda x: (safe_sort_key(x.received_at), x.id or 0))
 
         # Check reply status
         is_reply = bool(
