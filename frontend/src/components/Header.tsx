@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { RefreshCw, Zap, CheckCircle2, AlertCircle, Mail, ChevronDown, Check, Plus } from 'lucide-react';
 import { ConnectionDetailsResponse, DashboardSummary, SyncStatus } from '../types';
 import { api } from '../services/api';
+import { formatSyncTimeAgo } from '../utils/dateUtils';
 
 interface HeaderProps {
   title: string;
@@ -75,17 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const formatLastSync = (timestamp?: string) => {
-    if (!timestamp) return 'Never';
-    try {
-      const date = new Date(timestamp);
-      const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
-      if (diffSec < 15) return 'Just now';
-      if (diffSec < 60) return `${diffSec}s ago`;
-      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return 'Recent';
-    }
+    return formatSyncTimeAgo(timestamp);
   };
 
   const isSyncActive = syncing || syncStatus?.worker_status === 'syncing';

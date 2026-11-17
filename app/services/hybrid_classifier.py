@@ -192,18 +192,38 @@ class HybridClassifier:
                 elif final_lead_stage == "unknown":
                     final_lead_stage = "qualified"
 
-        # Rule C: Preserve lead stage on unrelated emails from known contacts
-        if final_intent == "other" and context.contact_relationship in ["existing_lead", "existing_customer"]:
-            final_relationship = context.contact_relationship
-            prior_stage = context.lead_stage if context.lead_stage != "unknown" else context.contact_lead_stage
-            if prior_stage != "unknown":
-                final_lead_stage = prior_stage
+        # Rule C: Preserve lead stage on unrelated emails from known contacts (never carry over WON or LOST to new messages)
+        if final_intent == "other":
+            if context.contact_relationship == "existing_customer":
+                final_relationship = "existing_customer"
+                final_lead_stage = "won"
+            elif context.contact_relationship == "existing_lead":
+                final_relationship = "existing_lead"
+                prior_stage = context.lead_stage if context.lead_stage != "unknown" else context.contact_lead_stage
+                if prior_stage in ["qualified", "proposal_sent", "negotiation"]:
+                    final_lead_stage = prior_stage
+                else:
+                    final_lead_stage = "unknown"
 
-        # Rule D: Prevent prospective leads from prematurely moving to WON without formal purchase order or invoice
-        if final_lead_stage == "won" and context.contact_relationship != "existing_customer" and context.contact_lead_stage != "won" and final_intent not in ["purchase_order", "invoice"]:
-            if not any("order" in sig or "po" in sig or "approved" in sig for sig in output.key_signals):
-                # Fall back to negotiation or prior stage
-                final_lead_stage = context.lead_stage if context.lead_stage not in ["unknown", "won"] else "negotiation"
+        # Rule D: Prevent prospective leads from prematurely moving to WON without formal purchase order, invoice, or explicit closed-won signals
+        if final_lead_stage == "won" and final_intent not in ["purchase_order", "invoice"] and context.contact_relationship != "existing_customer":
+            has_explicit_won_signals = any(
+                term in preprocessed.cleaned_body.lower()
+                for term in [
+                    "purchase order", "po#", "po-", "po number", "attached po",
+                    "official order", "contract signed", "payment completed",
+                    "remittance advice", "wire transfer processed", "invoice paid"
+                ]
+            )
+            if not has_explicit_won_signals:
+                if final_intent == "negotiation":
+                    final_lead_stage = "negotiation"
+                elif final_intent == "new_enquiry":
+                    final_lead_stage = "new"
+                elif context.lead_stage in ["qualified", "proposal_sent", "negotiation"]:
+                    final_lead_stage = context.lead_stage
+                else:
+                    final_lead_stage = "unknown"
 
         # Rule E: Context-informed confidence boost
         # If intent is follow_up and confirmed by sender history and lead memory, calibrate to >= 0.85

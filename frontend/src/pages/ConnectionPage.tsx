@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ConfigStatus, ConnectionDetailsResponse, SyncStatus, UpdateConnectionRequest } from '../types';
 import { api } from '../services/api';
+import { formatReceivedDateTime, formatSyncTimeAgo } from '../utils/dateUtils';
 
 interface ConnectionPageProps {
   onRefreshSummary: () => void;
@@ -292,7 +293,7 @@ export const ConnectionPage: React.FC<ConnectionPageProps> = ({ onRefreshSummary
                         <span>•</span>
                         <span>IMAP: {mb.imap_host}:{mb.imap_port}</span>
                         <span>•</span>
-                        <span>Added: {new Date(mb.created_at).toLocaleDateString()}</span>
+                        <span>Added: {formatReceivedDateTime(mb.created_at)}</span>
                       </div>
                     </div>
                   </div>
@@ -595,7 +596,7 @@ export const ConnectionPage: React.FC<ConnectionPageProps> = ({ onRefreshSummary
           <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
             <span className="text-slate-500 font-medium block">Last Synchronized At</span>
             <span className="text-sm font-semibold text-slate-800">
-              {syncStatus?.last_successful_sync || syncStatus?.last_synced_at ? new Date(syncStatus.last_successful_sync || syncStatus.last_synced_at!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Never'}
+              {formatSyncTimeAgo(syncStatus?.last_successful_sync || syncStatus?.last_synced_at)}
             </span>
             {syncStatus?.new_emails_last_sync !== undefined && (
               <span className="text-[10px] text-emerald-600 font-medium block">+{syncStatus.new_emails_last_sync} in last sync</span>

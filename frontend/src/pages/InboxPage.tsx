@@ -14,6 +14,7 @@ import {
 import { Email, PaginatedEmails } from '../types';
 import { Badge } from '../components/Badge';
 import { api } from '../services/api';
+import { formatReceivedDateTime } from '../utils/dateUtils';
 
 interface InboxPageProps {
   categoryFilter?: string;
@@ -265,7 +266,6 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                 <th className="px-4 py-3">Sender</th>
                 <th className="px-4 py-3">Subject & Preview</th>
                 <th className="px-4 py-3">Relevance</th>
-                <th className="px-4 py-3">Pipeline</th>
                 <th className="px-4 py-3">Relationship</th>
                 <th className="px-4 py-3">Intent</th>
                 <th className="px-4 py-3">Lead Stage</th>
@@ -278,14 +278,14 @@ export const InboxPage: React.FC<InboxPageProps> = ({
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="p-8 text-center text-slate-400">
+                  <td colSpan={11} className="p-8 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
                     <span>Loading emails...</span>
                   </td>
                 </tr>
               ) : data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="p-12 text-center text-slate-500">
+                  <td colSpan={11} className="p-12 text-center text-slate-500">
                     <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-semibold text-slate-700">
                       {categoryFilter === 'system_notifications'
@@ -338,13 +338,6 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {c?.pipeline_category ? (
-                          <Badge type="pipeline" value={c.pipeline_category} />
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
                         {c ? <Badge type="relationship" value={c.relationship} /> : <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-4 py-3">
@@ -368,8 +361,8 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                       <td className="px-4 py-3">
                         {c ? <Badge type="confidence" value={c.confidence} /> : <span className="text-slate-400">-</span>}
                       </td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-[11px]">
-                        {email.received_at ? new Date(email.received_at).toLocaleDateString() : 'N/A'}
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs font-medium">
+                        {formatReceivedDateTime(email.received_at)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button

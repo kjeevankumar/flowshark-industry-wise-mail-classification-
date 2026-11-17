@@ -1,8 +1,8 @@
 """Pydantic schemas for Email Inbox, Classification, and Dashboard APIs."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class ClassificationCorrectionRequest(BaseModel):
@@ -163,6 +163,14 @@ class EmailRead(BaseModel):
     contact: Optional[ContactRead] = None
     lead: Optional[LeadRead] = None
 
+    @field_serializer("received_at", "sync_timestamp", mode="plain", check_fields=False)
+    def serialize_email_dt(self, dt: Optional[datetime]) -> Optional[str]:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).isoformat()
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -206,6 +214,14 @@ class SyncStatusResponse(BaseModel):
     error_message: Optional[str] = None
     sync_interval_seconds: int = 30
     is_worker_running: bool = False
+
+    @field_serializer("last_successful_sync", "last_synced_at", mode="plain", check_fields=False)
+    def serialize_sync_dt(self, dt: Optional[datetime]) -> Optional[str]:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        return dt.astimezone(timezone.utc).isoformat()
 
 
 class ClassifyBatchRequest(BaseModel):

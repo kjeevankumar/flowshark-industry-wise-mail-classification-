@@ -22,6 +22,7 @@ import { DashboardSummary, Email, IndustryAnalyticsResponse } from '../types';
 import { Badge } from '../components/Badge';
 import { DemoEmailModal } from '../components/DemoEmailModal';
 import { api } from '../services/api';
+import { formatReceivedDateTime } from '../utils/dateUtils';
 
 interface DashboardPageProps {
   summary: DashboardSummary | null;
@@ -502,8 +503,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       <td className="px-5 py-3.5">
                         {c ? <Badge type="confidence" value={c.confidence} /> : <span className="text-slate-400">-</span>}
                       </td>
-                      <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">
-                        {email.received_at ? new Date(email.received_at).toLocaleDateString() : 'N/A'}
+                      <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap text-xs font-medium">
+                        {formatReceivedDateTime(email.received_at)}
                       </td>
                     </tr>
                   );

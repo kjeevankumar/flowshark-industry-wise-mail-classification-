@@ -21,6 +21,7 @@ import {
 import { Email, Classification, ClassificationHistoryItem, EmailContextResponse } from '../types';
 import { Badge } from './Badge';
 import { api } from '../services/api';
+import { formatReceivedDateTime, parseServerDate } from '../utils/dateUtils';
 
 interface EmailDetailModalProps {
   email: Email | null;
@@ -211,8 +212,8 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
             )}
             <div className="flex justify-between">
               <span className="text-slate-500 font-medium">Received Date:</span>
-              <span className="text-slate-700">
-                {email.received_at ? new Date(email.received_at).toLocaleString() : 'N/A'}
+              <span className="text-slate-700 font-semibold">
+                {formatReceivedDateTime(email.received_at)}
               </span>
             </div>
             {email.has_attachments && (
@@ -719,7 +720,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                   <div key={item.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
                     <div className="flex justify-between items-center text-[10px] text-slate-500">
                       <span className="font-semibold text-slate-700">Corrected by: {item.corrected_by}</span>
-                      <span>{new Date(item.corrected_at).toLocaleString()}</span>
+                      <span>{formatReceivedDateTime(item.corrected_at)}</span>
                     </div>
                     <div className="flex items-center space-x-2 text-[11px]">
                       <span className="text-slate-500 line-through">
@@ -766,8 +767,8 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-bold text-slate-800 truncate max-w-sm">{prior.sender}</span>
-                      <span className="text-slate-400 text-[10px]">
-                        {prior.received_at ? new Date(prior.received_at).toLocaleDateString() : 'Prior'}
+                      <span className="text-slate-500 text-[10px]">
+                        {formatReceivedDateTime(prior.received_at)}
                       </span>
                     </div>
                     <p className="font-medium text-slate-700 truncate">{prior.subject}</p>

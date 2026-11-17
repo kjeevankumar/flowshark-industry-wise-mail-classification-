@@ -89,9 +89,36 @@ DEFAULT_INTENT_SIGNALS: Dict[str, List[str]] = {
         "service enquiry",
         "service inquiry",
         "how much does it cost",
+        "how much will it cost",
+        "how much is the cost",
+        "what will be the cost",
+        "what is the cost",
+        "what would be the cost",
+        "what is the price",
+        "what will be the price",
+        "can you do this for us",
+        "can you do this",
+        "can you help us with",
+        "can you help us",
+        "can you build this",
+        "can you develop this",
+        "can you provide this",
+        "saw your post",
+        "saw your profile",
+        "saw your listing",
+        "let me know the cost",
+        "let me know the price",
         "cost to build",
         "quote for building",
         "pricing for",
+        "rates for",
+        "price for",
+        "enquiry for",
+        "inquiry for",
+        "need your help",
+        "cost?",
+        "pricing?",
+        "quote?",
     ],
     "negotiation": [
         "reduce the price",
@@ -329,10 +356,10 @@ class RuleBasedClassifier:
 
         # IMPORTANT: Maintain lead lifecycle and never blindly reset a valid existing stage to unknown!
         if best_category == "new_enquiry":
-            if relationship == "existing_lead" and prior_lead_stage != "unknown":
-                lead_stage = prior_lead_stage  # Preserved
-            elif has_qualification_signals:
+            if has_qualification_signals:
                 lead_stage = "qualified"
+            elif relationship == "existing_lead" and prior_lead_stage in ["qualified", "proposal_sent", "negotiation"]:
+                lead_stage = prior_lead_stage  # Preserved active in-flight deal stage
             else:
                 lead_stage = "new"
         elif best_category == "negotiation":
@@ -358,9 +385,11 @@ class RuleBasedClassifier:
         elif best_category == "complaint":
             lead_stage = prior_lead_stage if prior_lead_stage != "unknown" else "won"
         else:
-            # "other" (unrelated, noise, newsletter)
-            # If from an existing lead/customer, preserve their stage if known, else unknown
-            if has_prior_lead and prior_lead_stage != "unknown":
+            # "other" (unrelated, noise, ambiguous)
+            # If from an existing customer, preserve customer won status; if active lead, preserve active stage
+            if relationship == "existing_customer":
+                lead_stage = "won"
+            elif has_prior_lead and prior_lead_stage in ["qualified", "proposal_sent", "negotiation"]:
                 lead_stage = prior_lead_stage
             else:
                 lead_stage = "unknown"
