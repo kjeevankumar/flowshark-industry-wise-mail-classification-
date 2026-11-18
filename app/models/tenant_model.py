@@ -35,3 +35,4 @@ class Tenant(Base):
     leads = orm_relationship("Lead", back_populates="tenant", cascade="all, delete-orphan")
     emails = orm_relationship("Email", back_populates="tenant", cascade="all, delete-orphan")
     tasks = orm_relationship("Task", back_populates="tenant", cascade="all, delete-orphan")
+    commercial_events = orm_relationship("CommercialEvent", back_populates="tenant", cascade="all, delete-orphan")

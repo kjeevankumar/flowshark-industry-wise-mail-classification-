@@ -78,6 +78,26 @@ class OrganizationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CommercialEventRead(BaseModel):
+    """Representation of an audited commercial event (PO, Invoice Request, Payment Remittance, etc.)."""
+    id: int
+    tenant_id: Optional[int] = None
+    mailbox_id: Optional[int] = None
+    email_id: int
+    lead_id: Optional[int] = None
+    contact_id: Optional[int] = None
+    event_type: str
+    amount: Optional[float] = None
+    currency: Optional[str] = "USD"
+    reference_number: Optional[str] = None
+    event_date: Optional[datetime] = None
+    status: str = "recorded"
+    raw_details: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TaskRead(BaseModel):
     """Representation of an actionable business task or follow-up."""
     id: int
@@ -118,6 +138,7 @@ class LeadRead(BaseModel):
     assigned_to: Optional[str] = None
     organization: Optional[OrganizationRead] = None
     tasks: List[TaskRead] = Field(default_factory=list)
+    commercial_events: List[CommercialEventRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -223,6 +244,7 @@ class EmailRead(BaseModel):
     lead: Optional[LeadRead] = None
     organization: Optional[OrganizationRead] = None
     tasks: List[TaskRead] = Field(default_factory=list)
+    commercial_events: List[CommercialEventRead] = Field(default_factory=list)
 
     @field_serializer("received_at", "sync_timestamp", mode="plain", check_fields=False)
     def serialize_email_dt(self, dt: Optional[datetime]) -> Optional[str]:
@@ -314,6 +336,13 @@ class DashboardSummaryResponse(BaseModel):
     existing_leads_count: int
     purchase_orders_count: int
     invoices_count: int
+    invoice_billing_count: int = 0
+    invoice_requests_count: int = 0
+    invoice_updates_count: int = 0
+    payments_count: int = 0
+    payment_remittances_count: int = 0
+    payment_followups_count: int = 0
+    payment_disputes_count: int = 0
     needs_review_count: int
     non_business_count: int = 0
     human_corrected_count: int

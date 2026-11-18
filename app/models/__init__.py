@@ -10,6 +10,7 @@ from app.models.sync_model import SyncState
 from app.models.contact_model import Contact
 from app.models.lead_model import Lead, LeadActivityHistory
 from app.models.task_model import Task
+from app.models.commercial_event_model import CommercialEvent
 
 __all__ = [
     "Tenant",
@@ -24,5 +25,6 @@ __all__ = [
     "Lead",
     "LeadActivityHistory",
     "Task",
+    "CommercialEvent",
 ]
 

@@ -157,7 +157,26 @@ export const InboxPage: React.FC<InboxPageProps> = ({
 
   const formatCategoryTitle = (cat?: string) => {
     if (!cat) return 'All Synced Emails';
-    return cat.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+    const titles: Record<string, string> = {
+      purchase_orders: 'Purchase Orders',
+      invoice_billing: 'Invoice & Billing',
+      invoice_request: 'Invoice Requests',
+      invoice_update: 'Invoice Updates',
+      payments: 'Payments',
+      payment_remittance: 'Payment Remittance Advice',
+      payment_follow_up: 'Payment Follow-ups',
+      payment_dispute: 'Payment Disputes',
+      invoices: 'Invoice & Billing',
+      new_leads: 'New Leads',
+      negotiations: 'Negotiations',
+      follow_ups: 'Follow-ups',
+      clarifications: 'Business Clarifications',
+      business_clarifications: 'Business Clarifications',
+      existing_leads: 'Existing Leads',
+      needs_review: 'Needs Review',
+      system_notifications: 'System & Alerts',
+    };
+    return titles[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   return (

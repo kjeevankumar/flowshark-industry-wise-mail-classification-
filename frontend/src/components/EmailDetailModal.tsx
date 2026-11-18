@@ -17,6 +17,7 @@ import {
   Building2,
   Trash2,
   TrendingUp,
+  Receipt,
 } from 'lucide-react';
 import { Email, Classification, ClassificationHistoryItem, EmailContextResponse } from '../types';
 import { Badge } from './Badge';
@@ -238,6 +239,75 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
               {emailContext?.lead_business_context && (
                 <p className="text-[11px] text-slate-600 line-clamp-2">{emailContext.lead_business_context}</p>
               )}
+            </div>
+          )}
+
+          {/* Commercial Event Record Card */}
+          {((email.commercial_events && email.commercial_events.length > 0) || (cls?.commercial_intent && cls.commercial_intent !== 'none')) && (
+            <div className="bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-white border border-teal-200 rounded-xl p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-teal-900 font-bold text-xs uppercase tracking-wider">
+                  <Receipt className="w-4 h-4 text-teal-600" />
+                  <span>Commercial Event & Accounts Record</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                  {email.commercial_events?.[0]?.event_type?.replace(/_/g, ' ').toUpperCase() || cls?.commercial_intent?.replace(/_/g, ' ').toUpperCase() || 'COMMERCIAL RECORD'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                {(email.commercial_events?.[0]?.reference_number || (email.commercial_events?.[0]?.raw_details?.po_number || email.commercial_events?.[0]?.raw_details?.utr_number)) && (
+                  <div className="bg-white/80 p-2 rounded-lg border border-teal-100">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Reference #</span>
+                    <span className="font-bold text-slate-800">
+                      {email.commercial_events[0].reference_number || email.commercial_events[0].raw_details?.po_number || email.commercial_events[0].raw_details?.utr_number}
+                    </span>
+                  </div>
+                )}
+                {email.commercial_events?.[0]?.amount !== undefined && (
+                  <div className="bg-white/80 p-2 rounded-lg border border-teal-100">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Amount</span>
+                    <span className="font-bold text-slate-800">
+                      ${email.commercial_events[0].amount.toLocaleString()} {email.commercial_events[0].currency || 'USD'}
+                    </span>
+                  </div>
+                )}
+                <div className="bg-white/80 p-2 rounded-lg border border-teal-100">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Accounts Status</span>
+                  <span className="font-semibold text-emerald-700 capitalize">
+                    {email.commercial_events?.[0]?.status?.replace(/_/g, ' ') || 'Action Queued'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Explicit Verification / Disclaimer Box */}
+              <div className="text-[11px] p-2.5 rounded-lg border bg-white/90 text-slate-600 leading-relaxed">
+                {(cls?.commercial_intent === 'payment_remittance' || email.commercial_events?.[0]?.event_type === 'payment_remittance_received') && (
+                  <span>
+                    ⚠️ <strong>Remittance Advice:</strong> Recorded for tracking. This communication is not treated as verified payment confirmation until confirmed against bank ledger. Opportunity is not automatically marked Won.
+                  </span>
+                )}
+                {(cls?.commercial_intent === 'purchase_order' || email.commercial_events?.[0]?.event_type === 'po_received') && (
+                  <span>
+                    📑 <strong>Purchase Order:</strong> Attached to opportunity. An invoice preparation task has been automatically queued for the Accounts team. Deal is not automatically marked Won solely on keyword presence.
+                  </span>
+                )}
+                {(cls?.commercial_intent === 'payment_dispute' || email.commercial_events?.[0]?.event_type === 'payment_dispute_raised') && (
+                  <span>
+                    ⚖️ <strong>Billing Dispute:</strong> High-priority dispute ticket created for Accounts team to investigate discrepancy and reconcile statement with client.
+                  </span>
+                )}
+                {(cls?.commercial_intent === 'invoice_request' || email.commercial_events?.[0]?.event_type === 'invoice_requested') && (
+                  <span>
+                    🧾 <strong>Invoice Request:</strong> Customer requested invoice/tax invoice. Queued for Accounts team fulfillment.
+                  </span>
+                )}
+                {(cls?.commercial_intent === 'invoice_update' || email.commercial_events?.[0]?.event_type === 'invoice_update_requested') && (
+                  <span>
+                    ✏️ <strong>Invoice Update:</strong> Request for GST/address/line-item correction recorded for Accounts team processing.
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
@@ -656,7 +726,12 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                     <option value="clarifications">Clarifications</option>
                     <option value="existing_leads">Existing Leads</option>
                     <option value="purchase_orders">Purchase Orders</option>
-                    <option value="invoices">Invoices</option>
+                    <option value="invoice_request">Invoice Request</option>
+                    <option value="invoice_update">Invoice Update</option>
+                    <option value="payment_remittance">Payment Remittance</option>
+                    <option value="payment_follow_up">Payment Follow-up</option>
+                    <option value="payment_dispute">Payment Dispute</option>
+                    <option value="invoices">Invoices (General)</option>
                     <option value="needs_review">Needs Review</option>
                   </select>
                 </div>
@@ -689,7 +764,12 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                     <option value="follow_up">Follow-up</option>
                     <option value="business_clarification">Clarification</option>
                     <option value="purchase_order">Purchase Order</option>
-                    <option value="invoice">Invoice</option>
+                    <option value="invoice_request">Invoice Request</option>
+                    <option value="invoice_update">Invoice Update</option>
+                    <option value="payment_remittance">Payment Remittance</option>
+                    <option value="payment_follow_up">Payment Follow-up</option>
+                    <option value="payment_dispute">Payment Dispute</option>
+                    <option value="invoice">Invoice (General)</option>
                     <option value="complaint">Complaint</option>
                     <option value="other">Other / Noise</option>
                     <option value="not_applicable">Not Applicable</option>

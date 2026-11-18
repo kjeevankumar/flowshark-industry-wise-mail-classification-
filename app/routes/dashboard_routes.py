@@ -57,6 +57,13 @@ def get_dashboard_summary(
             existing_leads_count=0,
             purchase_orders_count=0,
             invoices_count=0,
+            invoice_billing_count=0,
+            invoice_requests_count=0,
+            invoice_updates_count=0,
+            payments_count=0,
+            payment_remittances_count=0,
+            payment_followups_count=0,
+            payment_disputes_count=0,
             needs_review_count=0,
             human_corrected_count=0,
             is_llm_active=settings.is_llm_configured,
@@ -101,10 +108,41 @@ def get_dashboard_summary(
         (Classification.pipeline_category == "purchase_orders")
         | (Classification.intent == "purchase_order")
     ).count()
-    invoices_count = biz_class_q.filter(
+    # Commercial Subcategory Counts
+    invoice_requests_count = biz_class_q.filter(
+        (Classification.pipeline_category == "invoice_request")
+        | (Classification.intent == "invoice_request")
+        | (Classification.commercial_intent == "invoice_request")
+    ).count()
+    invoice_updates_count = biz_class_q.filter(
+        (Classification.pipeline_category == "invoice_update")
+        | (Classification.intent == "invoice_update")
+        | (Classification.commercial_intent == "invoice_update")
+    ).count()
+    legacy_invoices_count = biz_class_q.filter(
         (Classification.pipeline_category == "invoices")
         | (Classification.intent == "invoice")
     ).count()
+    invoice_billing_count = invoice_requests_count + invoice_updates_count + legacy_invoices_count
+
+    payment_remittances_count = biz_class_q.filter(
+        (Classification.pipeline_category == "payment_remittance")
+        | (Classification.intent == "payment_remittance")
+        | (Classification.commercial_intent == "payment_remittance")
+    ).count()
+    payment_followups_count = biz_class_q.filter(
+        (Classification.pipeline_category == "payment_follow_up")
+        | (Classification.intent == "payment_follow_up")
+        | (Classification.commercial_intent == "payment_follow_up")
+    ).count()
+    payment_disputes_count = biz_class_q.filter(
+        (Classification.pipeline_category == "payment_dispute")
+        | (Classification.intent == "payment_dispute")
+        | (Classification.commercial_intent == "payment_dispute")
+    ).count()
+    payments_count = payment_remittances_count + payment_followups_count + payment_disputes_count
+
+    invoices_count = invoice_billing_count
     needs_review_count = biz_class_q.filter(
         (Classification.pipeline_category == "needs_review")
         | (Classification.intent.in_(["other", "needs_review"]))
@@ -140,6 +178,13 @@ def get_dashboard_summary(
         existing_leads_count=existing_leads_count,
         purchase_orders_count=purchase_orders_count,
         invoices_count=invoices_count,
+        invoice_billing_count=invoice_billing_count,
+        invoice_requests_count=invoice_requests_count,
+        invoice_updates_count=invoice_updates_count,
+        payments_count=payments_count,
+        payment_remittances_count=payment_remittances_count,
+        payment_followups_count=payment_followups_count,
+        payment_disputes_count=payment_disputes_count,
         needs_review_count=needs_review_count,
         non_business_count=non_business_count,
         human_corrected_count=human_corrected_count,

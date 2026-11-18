@@ -35,9 +35,9 @@ class RelevanceResult:
 
 # Known automated non-business sender patterns (supporting signal)
 AUTOMATED_NOTIFICATION_SENDERS = [
-    re.compile(r"no-?reply@", re.IGNORECASE),
-    re.compile(r"noreply@", re.IGNORECASE),
-    re.compile(r"donotreply@", re.IGNORECASE),
+    re.compile(r"no-?reply[-a-z0-9._]*@", re.IGNORECASE),
+    re.compile(r"noreply[-a-z0-9._]*@", re.IGNORECASE),
+    re.compile(r"donotreply[-a-z0-9._]*@", re.IGNORECASE),
     re.compile(r"notifications?@", re.IGNORECASE),
     re.compile(r"alert[s]?@", re.IGNORECASE),
     re.compile(r"newsletter@", re.IGNORECASE),
@@ -88,6 +88,9 @@ SYSTEM_NOTIFICATION_PATTERNS = [
     re.compile(r"\bdeployment (?:failed|succeeded|live)\b", re.IGNORECASE),
     re.compile(r"\bbuild (?:failed|succeeded|error)\b", re.IGNORECASE),
     re.compile(r"\brun (?:failed|succeeded)\b", re.IGNORECASE),
+    re.compile(r"\b(?:amazon web services|aws|google cloud|stripe|cloudflare|vercel|render|digitalocean|github|atlassian)\s*(?:invoice|bill|receipt|monthly statement|payment receipt)\b", re.IGNORECASE),
+    re.compile(r"\b(?:invoice|receipt|billing|statement)\s*(?:is\s*)?available\b", re.IGNORECASE),
+    re.compile(r"\bcloud\s*billing\b", re.IGNORECASE),
 ]
 
 # Automated Transactional & Notification Patterns (Banks, Forms, Calendars)
@@ -209,19 +212,20 @@ class BusinessRelevanceDetector:
                     needs_review=False,
                 )
 
-        # Check for formal Invoice signals
-        for pat in INVOICE_PATTERNS:
-            m = pat.search(combined_text)
-            if m and not any(sec.search(subject_clean) for sec in AUTOMATED_TRANSACTION_PATTERNS):
-                evidence.append(f"Invoice indicator: '{m.group(0)}'")
-                return RelevanceResult(
-                    relevance_category="purchase_commercial",
-                    is_business_relevant=True,
-                    confidence=0.92,
-                    reason="Commercial invoice or billing statement detected.",
-                    evidence=evidence,
-                    needs_review=False,
-                )
+        # Check for formal Invoice signals (only if NOT an automated system/notification sender)
+        if not is_automated_sender and not any(sec.search(subject_clean) for sec in SYSTEM_NOTIFICATION_PATTERNS):
+            for pat in INVOICE_PATTERNS:
+                m = pat.search(combined_text)
+                if m and not any(sec.search(subject_clean) for sec in AUTOMATED_TRANSACTION_PATTERNS):
+                    evidence.append(f"Invoice indicator: '{m.group(0)}'")
+                    return RelevanceResult(
+                        relevance_category="purchase_commercial",
+                        is_business_relevant=True,
+                        confidence=0.92,
+                        reason="Commercial invoice or billing statement detected.",
+                        evidence=evidence,
+                        needs_review=False,
+                    )
 
         # -------------------------------------------------------------------------
         # Priority Check 2: Account Security Notifications

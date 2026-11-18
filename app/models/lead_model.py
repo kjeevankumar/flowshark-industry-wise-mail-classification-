@@ -64,6 +64,7 @@ class Lead(Base):
     emails = orm_relationship("Email", back_populates="lead")
     conversations = orm_relationship("Conversation", back_populates="lead")
     tasks = orm_relationship("Task", back_populates="lead", cascade="all, delete-orphan")
+    commercial_events = orm_relationship("CommercialEvent", back_populates="lead")
     activities = orm_relationship(
         "LeadActivityHistory",
         back_populates="lead",

@@ -67,6 +67,11 @@ class Email(Base):
     contact = relationship("Contact", back_populates="emails")
     lead = relationship("Lead", back_populates="emails")
     tasks = relationship("Task", back_populates="email", cascade="all, delete-orphan")
+    commercial_events = relationship(
+        "CommercialEvent",
+        back_populates="email",
+        cascade="all, delete-orphan",
+    )
     classification = relationship(
         "Classification",
         back_populates="email",

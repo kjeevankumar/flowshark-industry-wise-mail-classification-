@@ -227,13 +227,57 @@ def list_emails(
             query = query.filter(
                 Classification.is_business_relevant != False,  # noqa: E712
                 (Classification.pipeline_category == "purchase_orders")
-                | (Classification.intent == "purchase_order"),
+                | (Classification.intent == "purchase_order")
+                | (Classification.commercial_intent == "purchase_order"),
             )
-        elif cat == "invoices":
+        elif cat in ("invoices", "invoice_billing"):
             query = query.filter(
                 Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "invoices")
-                | (Classification.intent == "invoice"),
+                (Classification.pipeline_category.in_(["invoices", "invoice_billing", "invoice_request", "invoice_update"]))
+                | (Classification.intent.in_(["invoice", "invoice_request", "invoice_update"]))
+                | (Classification.commercial_intent.in_(["invoice_request", "invoice_update"])),
+            )
+        elif cat == "invoice_request":
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "invoice_request")
+                | (Classification.intent == "invoice_request")
+                | (Classification.commercial_intent == "invoice_request"),
+            )
+        elif cat == "invoice_update":
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "invoice_update")
+                | (Classification.intent == "invoice_update")
+                | (Classification.commercial_intent == "invoice_update"),
+            )
+        elif cat == "payments":
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category.in_(["payments", "payment_remittance", "payment_follow_up", "payment_dispute"]))
+                | (Classification.intent.in_(["payment_remittance", "payment_follow_up", "payment_dispute"]))
+                | (Classification.commercial_intent.in_(["payment_remittance", "payment_follow_up", "payment_dispute"])),
+            )
+        elif cat == "payment_remittance":
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "payment_remittance")
+                | (Classification.intent == "payment_remittance")
+                | (Classification.commercial_intent == "payment_remittance"),
+            )
+        elif cat == "payment_follow_up":
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "payment_follow_up")
+                | (Classification.intent == "payment_follow_up")
+                | (Classification.commercial_intent == "payment_follow_up"),
+            )
+        elif cat == "payment_dispute":
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                (Classification.pipeline_category == "payment_dispute")
+                | (Classification.intent == "payment_dispute")
+                | (Classification.commercial_intent == "payment_dispute"),
             )
         elif cat == "needs_review":
             query = query.filter(
@@ -405,6 +449,8 @@ def delete_email(
         )
 
     # Clean up associated records
+    from app.models.commercial_event_model import CommercialEvent
+    db.query(CommercialEvent).filter(CommercialEvent.email_id == email_id).delete(synchronize_session=False)
     db.query(Task).filter(Task.email_id == email_id).delete(synchronize_session=False)
     db.query(ClassificationHistory).filter(ClassificationHistory.email_id == email_id).delete(synchronize_session=False)
     db.query(LeadActivityHistory).filter(LeadActivityHistory.email_id == email_id).delete(synchronize_session=False)
@@ -468,6 +514,8 @@ def cleanup_non_business(
         }
 
     # Delete relational children
+    from app.models.commercial_event_model import CommercialEvent
+    db.query(CommercialEvent).filter(CommercialEvent.email_id.in_(target_email_ids)).delete(synchronize_session=False)
     db.query(Task).filter(Task.email_id.in_(target_email_ids)).delete(synchronize_session=False)
     db.query(ClassificationHistory).filter(ClassificationHistory.email_id.in_(target_email_ids)).delete(synchronize_session=False)
     db.query(LeadActivityHistory).filter(LeadActivityHistory.email_id.in_(target_email_ids)).delete(synchronize_session=False)

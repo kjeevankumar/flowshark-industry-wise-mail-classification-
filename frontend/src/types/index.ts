@@ -7,6 +7,11 @@ export type Intent =
   | 'business_clarification'
   | 'purchase_order'
   | 'invoice'
+  | 'invoice_request'
+  | 'invoice_update'
+  | 'payment_remittance'
+  | 'payment_follow_up'
+  | 'payment_dispute'
   | 'complaint'
   | 'other'
   | 'not_applicable';
@@ -42,7 +47,31 @@ export type PipelineCategory =
   | 'existing_leads'
   | 'purchase_orders'
   | 'invoices'
+  | 'invoice_billing'
+  | 'invoice_request'
+  | 'invoice_update'
+  | 'payments'
+  | 'payment_remittance'
+  | 'payment_follow_up'
+  | 'payment_dispute'
   | 'needs_review';
+
+export interface CommercialEvent {
+  id: number;
+  tenant_id?: number;
+  mailbox_id?: number;
+  email_id: number;
+  lead_id?: number;
+  contact_id?: number;
+  event_type: string;
+  amount?: number;
+  currency?: string;
+  reference_number?: string;
+  event_date?: string;
+  status: string;
+  raw_details?: Record<string, any>;
+  created_at: string;
+}
 
 export interface Organization {
   id: number;
@@ -264,6 +293,7 @@ export interface Email {
   lead?: Lead;
   organization?: Organization;
   tasks?: Task[];
+  commercial_events?: CommercialEvent[];
 }
 
 export interface PaginatedEmails {
@@ -288,6 +318,13 @@ export interface DashboardSummary {
   existing_leads_count: number;
   purchase_orders_count: number;
   invoices_count: number;
+  invoice_billing_count?: number;
+  invoice_requests_count?: number;
+  invoice_updates_count?: number;
+  payments_count?: number;
+  payment_remittances_count?: number;
+  payment_followups_count?: number;
+  payment_disputes_count?: number;
   needs_review_count: number;
   non_business_count?: number;
   human_corrected_count: number;

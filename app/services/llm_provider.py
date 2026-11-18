@@ -33,6 +33,11 @@ IntentType = Literal[
     "business_clarification",
     "existing_lead",
     "purchase_order",
+    "invoice_request",
+    "invoice_update",
+    "payment_remittance",
+    "payment_follow_up",
+    "payment_dispute",
     "invoice",
     "complaint",
     "other",
@@ -218,15 +223,20 @@ Categories and Allowed Values:
    - "unknown": Unclear, promotional newsletter, automated system alert, or spam.
 
 2. intent:
-   - "new_enquiry": Seeking new services, products, pricing, or vendor availability.
+   - "new_enquiry": Seeking new services, products, pricing, or vendor availability (e.g. quote requests, RFPs).
    - "negotiation": Inquiring about discounts, budget flexibility, pricing reductions, or payment terms.
    - "follow_up": Checking status of a previous proposal, awaiting response, gentle reminders, or status checks.
    - "existing_lead": Ongoing project deployment, weekly syncs, Phase 2 scope additions, addendums to existing agreements, or active account updates.
    - "business_clarification": Asking for details on scope, technical requirements, milestones, modifications, or timeline.
-   - "purchase_order": Sending or referencing a formal Purchase Order (PO) or closing agreement.
-   - "invoice": Invoicing, bills, payment confirmations, or receipts.
+   - "purchase_order": Sending or referencing a formal Purchase Order (PO) or closing order.
+   - "invoice_request": Customer asks for an invoice for an agreed project, asks for a tax invoice against an existing PO, duplicate invoice copy, or invoice after service completion. (NEVER classify quotation requests or price inquiries here).
+   - "invoice_update": Customer requests GST number correction, billing address change, reports incorrect invoice amount, requests revised invoice, or reports missing/incorrect invoice detail.
+   - "payment_remittance": Customer shares payment transfer information, UTR/reference number, transaction date, or remittance advice. (Do NOT treat as verified payment confirmation and do NOT mark opportunity Won).
+   - "payment_follow_up": Customer asks about pending payment status, confirms expected payment date, or requests payment status.
+   - "payment_dispute": Customer challenges invoice amount, duplicate billing, taxes, payment allocation, or other billing discrepancies.
    - "complaint": Service issues, bugs, delays, or dissatisfaction.
    - "other": Newsletters, automated alerts, job applications, spam, or non-lead text.
+   CRITICAL: Inbound emails must NEVER be classified as "invoice_issued"!
 
 3. lead_stage:
    - "new": Initial discovery.
@@ -441,18 +451,31 @@ class FallbackLLMProvider(BaseLLMProvider):
         )
 
         # Step 4: Fine-Grained Commercial Intent Resolution
+        # CRITICAL: Incoming emails must NEVER be classified as invoice_issued!
         body_lower = preprocessed.cleaned_body.lower()
-        if pipe_res.pipeline_category == "invoices" or pipe_res.intent == "invoice":
-            if any(term in body_lower for term in ["remittance", "payment has been processed", "wire transfer processed", "advice", "payment received", "payment confirmed", "funds transferred"]):
-                commercial_intent = "payment_remittance"
-            elif any(term in body_lower for term in ["overdue", "past due", "friendly reminder", "pending payment", "unpaid invoice"]):
-                commercial_intent = "payment_follow_up"
-            elif any(term in body_lower for term in ["dispute", "incorrect charge", "wrong amount", "billing error"]):
-                commercial_intent = "payment_dispute"
-            else:
-                commercial_intent = "invoice_issued"
-        elif pipe_res.pipeline_category == "purchase_orders" or pipe_res.intent == "purchase_order":
+        if pipe_res.pipeline_category == "purchase_orders" or pipe_res.intent == "purchase_order":
             commercial_intent = "purchase_order"
+        elif pipe_res.pipeline_category == "invoice_request" or pipe_res.intent == "invoice_request":
+            commercial_intent = "invoice_request"
+        elif pipe_res.pipeline_category == "invoice_update" or pipe_res.intent == "invoice_update":
+            commercial_intent = "invoice_update"
+        elif pipe_res.pipeline_category == "payment_remittance" or pipe_res.intent == "payment_remittance":
+            commercial_intent = "payment_remittance"
+        elif pipe_res.pipeline_category == "payment_follow_up" or pipe_res.intent == "payment_follow_up":
+            commercial_intent = "payment_follow_up"
+        elif pipe_res.pipeline_category == "payment_dispute" or pipe_res.intent == "payment_dispute":
+            commercial_intent = "payment_dispute"
+        elif pipe_res.pipeline_category == "invoices" or pipe_res.intent == "invoice":
+            if any(term in body_lower for term in ["remittance", "payment has been processed", "wire transfer processed", "advice", "funds transferred", "utr"]):
+                commercial_intent = "payment_remittance"
+            elif any(term in body_lower for term in ["overdue", "past due", "friendly reminder", "pending payment", "unpaid invoice", "confirm receipt of payment"]):
+                commercial_intent = "payment_follow_up"
+            elif any(term in body_lower for term in ["dispute", "incorrect charge", "wrong amount", "billing error", "tax discrepancy"]):
+                commercial_intent = "payment_dispute"
+            elif any(term in body_lower for term in ["correct", "gst", "address", "update"]):
+                commercial_intent = "invoice_update"
+            else:
+                commercial_intent = "invoice_request"
         elif pipe_res.pipeline_category == "negotiations" or pipe_res.intent == "negotiation":
             commercial_intent = "commercial_negotiation"
         elif pipe_res.pipeline_category == "new_leads" or pipe_res.intent == "new_enquiry":

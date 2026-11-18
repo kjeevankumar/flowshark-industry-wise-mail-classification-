@@ -246,25 +246,17 @@ class HybridClassifier:
                 else:
                     final_lead_stage = "unknown"
 
-        # Rule D: Prevent prospective leads from prematurely moving to WON without formal purchase order, invoice, or explicit closed-won signals
-        if final_lead_stage == "won" and final_intent not in ["purchase_order", "invoice"] and context.contact_relationship != "existing_customer":
-            has_explicit_won_signals = any(
-                term in preprocessed.cleaned_body.lower()
-                for term in [
-                    "purchase order", "po#", "po-", "po number", "attached po",
-                    "official order", "contract signed", "payment completed",
-                    "remittance advice", "wire transfer processed", "invoice paid"
-                ]
-            )
-            if not has_explicit_won_signals:
-                if final_intent == "negotiation":
-                    final_lead_stage = "negotiation"
-                elif final_intent == "new_enquiry":
-                    final_lead_stage = "new"
-                elif context.lead_stage in ["qualified", "proposal_sent", "negotiation"]:
-                    final_lead_stage = context.lead_stage
-                else:
-                    final_lead_stage = "unknown"
+        # Rule D: Prevent prospective leads from prematurely moving to WON without verified closing terms
+        # CRITICAL: Neither PO keywords nor payment remittances should mark an opportunity WON!
+        if final_lead_stage == "won" and context.contact_relationship != "existing_customer":
+            if final_intent in ["purchase_order", "negotiation", "payment_dispute"]:
+                final_lead_stage = "negotiation"
+            elif final_intent in ["new_enquiry"]:
+                final_lead_stage = "new"
+            elif context.lead_stage in ["qualified", "proposal_sent", "negotiation"]:
+                final_lead_stage = context.lead_stage
+            else:
+                final_lead_stage = "qualified"
 
         # Rule E: Context-informed confidence boost
         # If intent is follow_up and confirmed by sender history and lead memory, calibrate to >= 0.85
@@ -460,21 +452,18 @@ class HybridClassifier:
             if final_pipeline_category in ["follow_ups", "clarifications"]:
                 pass  # Stage is preserved
             elif final_intent == "purchase_order" or final_pipeline_category == "purchase_orders":
-                if lead.status != "won":
-                    old_stage = lead.status
-                    lead.status = "won"
-                    lead.updated_at = datetime.now(timezone.utc)
-                    activity = LeadActivityHistory(
-                        mailbox_id=email_record.mailbox_id,
-                        lead_id=lead.id,
-                        contact_id=contact.id,
-                        email_id=email_record.id,
-                        activity_type="stage_transition",
-                        from_stage=old_stage,
-                        to_stage="won",
-                        description=f"Stage transitioned from '{old_stage}' to 'won' via PO '{email_record.subject}'.",
-                    )
-                    self.db.add(activity)
+                # CRITICAL: Do NOT mark the opportunity Won solely because a PO keyword or number appears!
+                activity = LeadActivityHistory(
+                    mailbox_id=email_record.mailbox_id,
+                    lead_id=lead.id,
+                    contact_id=contact.id,
+                    email_id=email_record.id,
+                    activity_type="po_received",
+                    from_stage=lead.status,
+                    to_stage=lead.status,
+                    description=f"Purchase order received for email '{email_record.subject}'. Queued invoice preparation task for Accounts team.",
+                )
+                self.db.add(activity)
             elif final_intent == "negotiation" and lead.status in ["new", "qualified", "proposal_sent"]:
                 old_stage = lead.status
                 lead.status = "negotiation"
@@ -498,6 +487,62 @@ class HybridClassifier:
                     lead.requested_solution_domain = final_target_industry
         else:
             email_record.lead_id = None
+
+        # 9b. Commercial Event Recording (PO, Invoice Request, Invoice Update, Payment Remittance, Follow-up, Dispute)
+        is_commercial_signal = (
+            final_pipeline_category in ["purchase_orders", "invoice_request", "invoice_update", "payment_remittance", "payment_follow_up", "payment_dispute", "invoices"]
+            or final_intent in ["purchase_order", "invoice_request", "invoice_update", "payment_remittance", "payment_follow_up", "payment_dispute", "invoice"]
+        )
+        if is_commercial_signal:
+            from app.models.commercial_event_model import CommercialEvent
+            event_type_map = {
+                "purchase_order": "po_received",
+                "purchase_orders": "po_received",
+                "invoice_request": "invoice_requested",
+                "invoice_update": "invoice_update_requested",
+                "payment_remittance": "payment_remittance_received",
+                "payment_follow_up": "payment_followup_received",
+                "payment_dispute": "payment_dispute_raised",
+            }
+            etype = event_type_map.get(final_intent) or event_type_map.get(final_pipeline_category, "po_received")
+
+            c_meta = getattr(rule_signals, "commercial_metadata", {}) or {}
+            if not c_meta:
+                if etype == "po_received":
+                    from app.services.rule_classifier import extract_po_metadata
+                    c_meta = extract_po_metadata(preprocessed.cleaned_body, email_record.subject)
+                elif etype in ["payment_remittance_received", "payment_followup_received"]:
+                    from app.services.rule_classifier import extract_payment_metadata
+                    c_meta = extract_payment_metadata(preprocessed.cleaned_body, email_record.subject)
+                elif etype in ["invoice_requested", "invoice_update_requested", "payment_dispute_raised"]:
+                    from app.services.rule_classifier import extract_invoice_metadata
+                    c_meta = extract_invoice_metadata(preprocessed.cleaned_body, email_record.subject)
+
+            ref_num = c_meta.get("po_number") or c_meta.get("reference_number") or c_meta.get("utr_number") or c_meta.get("invoice_number")
+            amt = c_meta.get("amount")
+
+            comm_event = self.db.query(CommercialEvent).filter(CommercialEvent.email_id == email_record.id).first()
+            if not comm_event:
+                comm_event = CommercialEvent(
+                    tenant_id=tenant_id,
+                    mailbox_id=email_record.mailbox_id,
+                    email_id=email_record.id,
+                    lead_id=lead.id if lead else None,
+                    contact_id=contact.id if contact else None,
+                    event_type=etype,
+                    amount=amt,
+                    reference_number=ref_num,
+                    status="action_required" if etype in ["po_received", "invoice_requested", "invoice_update_requested", "payment_dispute_raised"] else "recorded",
+                    raw_details=c_meta,
+                )
+                self.db.add(comm_event)
+            else:
+                comm_event.event_type = etype
+                comm_event.amount = amt or comm_event.amount
+                comm_event.reference_number = ref_num or comm_event.reference_number
+                comm_event.raw_details = c_meta
+                comm_event.lead_id = lead.id if lead else None
+                comm_event.contact_id = contact.id if contact else None
 
         # 10. Persistence and Audit Trail in Classification & ClassificationHistory
         existing_class = (
@@ -657,6 +702,10 @@ class HybridClassifier:
                 intent=final_intent,
             )
             for t_title in task_titles:
+                is_accounts_task = any(term in t_title.lower() for term in ["accounts team", "tax invoice", "remittance", "dispute", "invoice update", "issue requested"])
+                assigned_group = "Accounts" if is_accounts_task else None
+                t_prio = "high" if ("dispute" in t_title.lower() or "prepare tax invoice" in t_title.lower() or output.action_urgency == "high") else (output.action_urgency if output.action_urgency in ["high", "medium", "low"] else "medium")
+
                 task = Task(
                     tenant_id=tenant_id,
                     mailbox_id=email_record.mailbox_id,
@@ -664,7 +713,8 @@ class HybridClassifier:
                     email_id=email_record.id,
                     contact_id=contact.id if contact else None,
                     title=t_title,
-                    priority=output.action_urgency if output.action_urgency in ["high", "medium", "low"] else "medium",
+                    assigned_to=assigned_group,
+                    priority=t_prio,
                     status="pending",
                     who_owes_response="company",
                 )

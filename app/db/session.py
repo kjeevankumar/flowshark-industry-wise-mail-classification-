@@ -63,6 +63,7 @@ def init_db() -> None:
     import app.models.contact_model  # noqa: F401
     import app.models.lead_model  # noqa: F401
     import app.models.task_model  # noqa: F401
+    import app.models.commercial_event_model  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

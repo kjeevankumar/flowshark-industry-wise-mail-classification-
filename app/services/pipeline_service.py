@@ -66,25 +66,90 @@ class PipelineClassifier:
         signals = key_signals or []
 
         # Rule 2: Purchase Orders
+        # CRITICAL: Do NOT mark the opportunity Won solely because a PO keyword or number appears!
         if intent == "purchase_order":
+            resolved_stage = lead_stage if lead_stage not in ["unknown", None, "won"] else "negotiation"
+            if relationship == "existing_customer" and lead_stage == "won":
+                resolved_stage = "won"
             return PipelineAssignmentResult(
                 pipeline_category="purchase_orders",
-                relationship=relationship or "existing_customer",
+                relationship=relationship or "existing_lead",
                 intent="purchase_order",
-                lead_stage="won",
+                lead_stage=resolved_stage,
                 confidence=max(confidence, 0.90),
-                reason="Formal purchase order or commercial order confirmation.",
+                reason="Formal purchase order or commercial order confirmation received.",
                 needs_review=False,
             )
 
-        # Rule 3: Invoices
+        # Rule 3A: Invoice Request (Customer asks for tax invoice against PO, agreed project, or duplicate copy)
+        if intent == "invoice_request":
+            return PipelineAssignmentResult(
+                pipeline_category="invoice_request",
+                relationship=relationship or "existing_lead",
+                intent="invoice_request",
+                lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
+                confidence=max(confidence, 0.90),
+                reason="Customer request for tax invoice, project invoice, or duplicate invoice copy.",
+                needs_review=False,
+            )
+
+        # Rule 3B: Invoice Update (GSTIN correction, billing address change, revised invoice)
+        if intent == "invoice_update":
+            return PipelineAssignmentResult(
+                pipeline_category="invoice_update",
+                relationship=relationship or "existing_customer",
+                intent="invoice_update",
+                lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
+                confidence=max(confidence, 0.90),
+                reason="Customer request for invoice update (GSTIN correction, billing address, or revised details).",
+                needs_review=False,
+            )
+
+        # Rule 3C: Payment Remittance (Transfer advice, wire confirmation, UTR number)
+        # CRITICAL: Remittance is NOT verified payment confirmation; do NOT mark Won!
+        if intent == "payment_remittance":
+            return PipelineAssignmentResult(
+                pipeline_category="payment_remittance",
+                relationship=relationship or "existing_customer",
+                intent="payment_remittance",
+                lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
+                confidence=max(confidence, 0.90),
+                reason="Customer payment remittance advice or wire transfer notification (pending accounting reconciliation).",
+                needs_review=False,
+            )
+
+        # Rule 3D: Payment Follow-up (Payment status check, expected release date)
+        if intent == "payment_follow_up":
+            return PipelineAssignmentResult(
+                pipeline_category="payment_follow_up",
+                relationship=relationship or "existing_customer",
+                intent="payment_follow_up",
+                lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
+                confidence=max(confidence, 0.88),
+                reason="Customer inquiry regarding payment status or scheduled release date.",
+                needs_review=False,
+            )
+
+        # Rule 3E: Payment Dispute (Discrepancy, duplicate billing, incorrect tax)
+        if intent == "payment_dispute":
+            return PipelineAssignmentResult(
+                pipeline_category="payment_dispute",
+                relationship=relationship or "existing_customer",
+                intent="payment_dispute",
+                lead_stage="negotiation",
+                confidence=max(confidence, 0.90),
+                reason="Customer dispute challenging invoice amount, duplicate billing, or tax calculation.",
+                needs_review=False,
+            )
+
+        # Rule 3F: Legacy Invoices (fallback)
         if intent == "invoice":
             return PipelineAssignmentResult(
                 pipeline_category="invoices",
                 relationship=relationship or "existing_customer",
                 intent="invoice",
-                lead_stage=lead_stage if lead_stage != "unknown" else "won",
-                confidence=max(confidence, 0.90),
+                lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
+                confidence=max(confidence, 0.88),
                 reason="Commercial invoice, billing statement, or payment receipt.",
                 needs_review=False,
             )

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   MailCheck,
@@ -10,9 +10,13 @@ import {
   Users,
   FileCheck,
   Receipt,
+  CreditCard,
+  FileText,
   AlertTriangle,
   Settings,
   Mail,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { DashboardSummary } from '../types';
 
@@ -29,6 +33,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   summary,
 }) => {
+  const [invoiceMenuOpen, setInvoiceMenuOpen] = useState(true);
+  const [paymentMenuOpen, setPaymentMenuOpen] = useState(true);
+
   const isNavActive = (tab: string, cat?: string) => {
     if (tab === 'inbox' && cat) {
       return currentTab === 'inbox' && categoryFilter === cat;
@@ -39,14 +46,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return currentTab === tab;
   };
 
-  const navClass = (tab: string, cat?: string) => {
+  const navClass = (tab: string, cat?: string, isSubItem: boolean = false) => {
     const active = isNavActive(tab, cat);
-    return `w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+    return `w-full flex items-center justify-between ${
+      isSubItem ? 'pl-7 pr-3 py-1.5 text-xs' : 'px-3 py-2 text-sm'
+    } rounded-lg font-medium transition-colors ${
       active
         ? 'bg-indigo-600 text-white shadow-sm'
         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
     }`;
   };
+
+  const invoiceBillingTotal =
+    (summary?.invoice_requests_count ?? 0) +
+    (summary?.invoice_updates_count ?? 0) +
+    (summary?.invoice_billing_count ?? summary?.invoices_count ?? 0);
+
+  const paymentsTotal =
+    (summary?.payment_remittances_count ?? 0) +
+    (summary?.payment_followups_count ?? 0) +
+    (summary?.payment_disputes_count ?? 0) +
+    (summary?.payments_count ?? 0);
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200 h-screen flex flex-col flex-shrink-0 select-none">
@@ -64,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-6">
+      <div className="flex-1 overflow-y-auto p-3 space-y-5">
         {/* Core Views */}
         <div className="space-y-1">
           <div className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
@@ -106,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Intelligence Categories */}
+        {/* Lead Pipelines */}
         <div className="space-y-1">
           <div className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
             Lead Pipelines
@@ -171,10 +191,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             )}
           </button>
+        </div>
 
+        {/* Commercial Pipelines */}
+        <div className="space-y-1">
+          <div className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+            Commercial Pipelines
+          </div>
+
+          {/* 1. Purchase Orders */}
           <button onClick={() => onNavigate('inbox', 'purchase_orders')} className={navClass('inbox', 'purchase_orders')}>
             <div className="flex items-center space-x-2.5">
-              <FileCheck className="w-4 h-4 text-teal-500" />
+              <FileCheck className="w-4 h-4 text-teal-600" />
               <span>Purchase Orders</span>
             </div>
             {summary && summary.purchase_orders_count > 0 && (
@@ -184,17 +212,136 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
 
-          <button onClick={() => onNavigate('inbox', 'invoices')} className={navClass('inbox', 'invoices')}>
-            <div className="flex items-center space-x-2.5">
-              <Receipt className="w-4 h-4 text-violet-500" />
-              <span>Invoices</span>
+          {/* 2. Invoice & Billing Group */}
+          <div>
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => onNavigate('inbox', 'invoice_billing')}
+                className={`flex-1 flex items-center justify-between px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                  isNavActive('inbox', 'invoice_billing')
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Receipt className="w-4 h-4 text-violet-500" />
+                  <span>Invoice & Billing</span>
+                </div>
+                {invoiceBillingTotal > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    isNavActive('inbox', 'invoice_billing') ? 'bg-indigo-700 text-white' : 'bg-violet-100 text-violet-800'
+                  }`}>
+                    {invoiceBillingTotal}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setInvoiceMenuOpen(!invoiceMenuOpen)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 ml-1"
+                title="Toggle subcategories"
+              >
+                {invoiceMenuOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              </button>
             </div>
-            {summary && summary.invoices_count > 0 && (
-              <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-violet-100 text-violet-800">
-                {summary.invoices_count}
-              </span>
+
+            {invoiceMenuOpen && (
+              <div className="mt-0.5 space-y-0.5">
+                <button onClick={() => onNavigate('inbox', 'invoice_request')} className={navClass('inbox', 'invoice_request', true)}>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
+                    <span>Invoice Request</span>
+                  </div>
+                  {summary && (summary.invoice_requests_count ?? 0) > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                      {summary.invoice_requests_count}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => onNavigate('inbox', 'invoice_update')} className={navClass('inbox', 'invoice_update', true)}>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                    <span>Invoice Update</span>
+                  </div>
+                  {summary && (summary.invoice_updates_count ?? 0) > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                      {summary.invoice_updates_count}
+                    </span>
+                  )}
+                </button>
+              </div>
             )}
-          </button>
+          </div>
+
+          {/* 3. Payments Group */}
+          <div>
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => onNavigate('inbox', 'payments')}
+                className={`flex-1 flex items-center justify-between px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                  isNavActive('inbox', 'payments')
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5">
+                  <CreditCard className="w-4 h-4 text-emerald-600" />
+                  <span>Payments</span>
+                </div>
+                {paymentsTotal > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    isNavActive('inbox', 'payments') ? 'bg-indigo-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {paymentsTotal}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setPaymentMenuOpen(!paymentMenuOpen)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 ml-1"
+                title="Toggle subcategories"
+              >
+                {paymentMenuOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            {paymentMenuOpen && (
+              <div className="mt-0.5 space-y-0.5">
+                <button onClick={() => onNavigate('inbox', 'payment_remittance')} className={navClass('inbox', 'payment_remittance', true)}>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span>Remittance Advice</span>
+                  </div>
+                  {summary && (summary.payment_remittances_count ?? 0) > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                      {summary.payment_remittances_count}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => onNavigate('inbox', 'payment_follow_up')} className={navClass('inbox', 'payment_follow_up', true)}>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                    <span>Payment Follow-up</span>
+                  </div>
+                  {summary && (summary.payment_followups_count ?? 0) > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                      {summary.payment_followups_count}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => onNavigate('inbox', 'payment_dispute')} className={navClass('inbox', 'payment_dispute', true)}>
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                    <span>Payment Dispute</span>
+                  </div>
+                  {summary && (summary.payment_disputes_count ?? 0) > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-rose-100 text-rose-800">
+                      {summary.payment_disputes_count}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
 
           <button onClick={() => onNavigate('inbox', 'needs_review')} className={navClass('inbox', 'needs_review')}>
             <div className="flex items-center space-x-2.5">

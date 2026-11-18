@@ -22,6 +22,8 @@ class RuleSignalResult(NamedTuple):
     negations: List[str]
     reason: str
     context_used: str = ""
+    commercial_intent: str = "none"
+    commercial_metadata: Optional[Dict[str, Any]] = None
 
 
 # Negation trigger words
@@ -54,6 +56,130 @@ def is_automated_or_broadcast(sender: str = "", subject: str = "") -> bool:
     """Detect whether email is an automated system notification, delivery report, or broadcast newsletter."""
     check_str = f"{sender} {subject}".lower()
     return any(re.search(pat, check_str) for pat in AUTOMATED_PATTERNS)
+
+
+def extract_po_metadata(text: str, subject: str = "") -> Dict[str, Any]:
+    """Extract PO reference number, approved amount, terms, and dates from order communications."""
+    full_text = f"{subject}\n{text}"
+    meta: Dict[str, Any] = {}
+
+    # PO Number pattern
+    po_match = re.search(
+        r"(?:purchase\s*order(?:\s*number|\s*no|\s*#)?|p\.?o\.?(?:\s*number|\s*no|\s*#)?|po[-#\s:]+)\s*([A-Za-z0-9\-_/]+)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if po_match:
+        meta["po_number"] = po_match.group(1).strip()
+
+    # Amount extraction
+    amt_match = re.search(r"(?:\$|USD|EUR|GBP|₹|INR)\s*([\d,]+(?:\.\d{2})?)", full_text, re.IGNORECASE)
+    if not amt_match:
+        amt_match = re.search(r"([\d,]+(?:\.\d{2})?)\s*(?:USD|dollars|EUR|euros|INR|rupees)", full_text, re.IGNORECASE)
+    if amt_match:
+        try:
+            meta["amount"] = float(amt_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    # Payment terms
+    terms_match = re.search(
+        r"\b(net\s*(?:15|30|45|60|90)|due on receipt|due upon receipt|50%\s*advance|advance payment|milestone[- ]based)\b",
+        full_text,
+        re.IGNORECASE,
+    )
+    if terms_match:
+        meta["payment_terms"] = terms_match.group(1).strip()
+
+    # Delivery / Effective Date
+    date_match = re.search(
+        r"(?:delivery\s*date|required\s*by|start\s*date|valid\s*until|date)[:\s]+([A-Za-z0-9,\s\-/]+)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if date_match:
+        meta["date"] = date_match.group(1).strip()[:30]
+
+    return meta
+
+
+def extract_payment_metadata(text: str, subject: str = "") -> Dict[str, Any]:
+    """Extract UTR/wire transfer number, transaction date, and remitted amount."""
+    full_text = f"{subject}\n{text}"
+    meta: Dict[str, Any] = {}
+
+    utr_match = re.search(
+        r"\b(?:utr(?:\s*number|\s*no|\s*#)?|reference(?:\s*number|\s*no|\s*#)?|ref(?:\s*#)?|txn(?:\s*id|\s*#)?|wire\s*ref(?:\s*#)?|transfer\s*id)[:\s]*([A-Za-z0-9\-_]+)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if utr_match:
+        ref_val = utr_match.group(1).strip()
+        meta["reference_number"] = ref_val
+        meta["utr_number"] = ref_val
+
+    amt_match = re.search(r"(?:\$|USD|EUR|GBP|₹|INR)\s*([\d,]+(?:\.\d{2})?)", full_text, re.IGNORECASE)
+    if not amt_match:
+        amt_match = re.search(r"([\d,]+(?:\.\d{2})?)\s*(?:USD|dollars|EUR|euros|INR|rupees)", full_text, re.IGNORECASE)
+    if amt_match:
+        try:
+            meta["amount"] = float(amt_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    date_match = re.search(
+        r"(?:transferred\s*on|payment\s*date|dated|transaction\s*date)[:\s]+([A-Za-z0-9,\s\-/]+)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if date_match:
+        meta["transaction_date"] = date_match.group(1).strip()[:30]
+
+    return meta
+
+
+def extract_invoice_metadata(text: str, subject: str = "") -> Dict[str, Any]:
+    """Extract invoice reference number, PO number, amount, GSTIN, and requested update details."""
+    full_text = f"{subject}\n{text}"
+    meta: Dict[str, Any] = {}
+
+    inv_match = re.search(
+        r"\b(?:invoice(?:\s*number|\s*no|\s*#)?|inv[-#\s:]+|bill(?:\s*no|\s*#)?)\s*([A-Za-z0-9\-_/]+)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if inv_match:
+        meta["invoice_number"] = inv_match.group(1).strip()
+
+    po_match = re.search(
+        r"(?:purchase\s*order(?:\s*number|\s*no|\s*#)?|p\.?o\.?(?:\s*number|\s*no|\s*#)?|po[-#\s:]+)\s*([A-Za-z0-9\-_/]+)",
+        full_text,
+        re.IGNORECASE,
+    )
+    if po_match:
+        meta["po_number"] = po_match.group(1).strip()
+
+    amt_match = re.search(r"(?:\$|USD|EUR|GBP|₹|INR)\s*([\d,]+(?:\.\d{2})?)", full_text, re.IGNORECASE)
+    if not amt_match:
+        amt_match = re.search(r"([\d,]+(?:\.\d{2})?)\s*(?:USD|dollars|EUR|euros|INR|rupees)", full_text, re.IGNORECASE)
+    if amt_match:
+        try:
+            meta["amount"] = float(amt_match.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    gst_match = re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}\b", full_text)
+    if gst_match:
+        meta["gst_number"] = gst_match.group(0)
+
+    if "address" in full_text.lower():
+        meta["update_type"] = "billing_address"
+    elif gst_match or "gst" in full_text.lower():
+        meta["update_type"] = "gst_correction"
+    elif "amount" in full_text.lower() or "dispute" in full_text.lower():
+        meta["update_type"] = "amount_correction"
+
+    return meta
 
 # Configurable phrase signals mapped to intents
 DEFAULT_INTENT_SIGNALS: Dict[str, List[str]] = {
@@ -167,6 +293,12 @@ DEFAULT_INTENT_SIGNALS: Dict[str, List[str]] = {
         "tight budget",
         "payment terms",
         "commercial terms",
+        "finalize commercial terms",
+        "finalize terms",
+        "commercial proposal",
+        "proposal review",
+        "commercial proposal review",
+        "review commercial terms",
         "revised commercial proposal",
         "commercial terms discussion",
         "commercial terms are feasible",
@@ -284,41 +416,142 @@ DEFAULT_INTENT_SIGNALS: Dict[str, List[str]] = {
         "formal purchase order",
         "official purchase order",
         "purchase order issued",
+        "issuing the purchase order",
+        "please accept our po",
         "approved the quote",
         "approved your quote",
         "approved quote",
         "approved the proposal",
-        "proceed with the project",
-        "signing the agreement",
-        "master services agreement",
         "selected your proposal",
-        "selected flowshark",
-        "begin implementation",
-        "finalize the agreement",
-        "finalize the contract",
-        "vendor code",
-        "initiate the kickoff",
         "quoting the po number",
         "issuing po",
     ],
-    "invoice": [
-        "invoice attached",
-        "payment pending",
-        "payment confirmation",
-        "outstanding amount",
-        "bill for services",
-        "payment receipt",
+    "invoice_request": [
+        "send us the invoice",
+        "share the invoice",
+        "requesting an invoice",
+        "requesting the invoice",
+        "send the invoice for",
+        "send invoice for",
+        "share tax invoice",
+        "share the tax invoice",
+        "please share the tax invoice",
+        "please share the invoice",
+        "kindly share the tax invoice",
+        "kindly share the invoice",
+        "request for tax invoice",
+        "request for invoice",
+        "requesting tax invoice",
+        "tax invoice against",
+        "tax invoice against po",
+        "tax invoice against purchase order",
+        "tax invoice for the project",
+        "duplicate invoice copy",
+        "resend invoice copy",
+        "duplicate invoice",
+        "invoice for completed work",
+        "post-completion billing",
+        "raise the invoice",
+        "bill us for",
+        "send invoice",
+        "please invoice us",
+        "kindly share the invoice",
+        "share the invoice copy",
+        "need the invoice",
+        "send across the invoice",
+        "forward the invoice copy",
+        "include our po number on the invoice",
+        "include our po on the invoice",
+        "kindly include our po number",
+    ],
+    "invoice_update": [
+        "correct the invoice",
+        "update the invoice",
+        "revised invoice",
+        "revision of invoice",
+        "gst number correction",
+        "gstin correction",
+        "tax id correction",
+        "update gst",
+        "correct gst",
+        "change billing address",
+        "billing address update",
+        "billing address change",
+        "update billing entity",
+        "incorrect invoice amount",
+        "wrong amount on invoice",
+        "invoice amount is incorrect",
+        "missing po number on invoice",
+        "missing po on the invoice",
+        "update invoice #",
+        "reissue the invoice",
+        "re-issue the invoice",
+        "modify the invoice",
+        "amended invoice",
+    ],
+    "payment_remittance": [
         "remittance advice",
         "payment remittance",
-        "wire transfer confirmation",
+        "payment has been processed",
+        "payment transferred",
+        "transferred via wire",
+        "transferred to your account",
         "wire transfer was processed",
-        "wire transfer",
-        "credit your designated bank account",
-        "invoice #",
-        "inv-",
-        "accounts receivable",
-        "accounts payable",
-        "billing statement",
+        "wire transfer confirmation",
+        "funds have been transferred",
+        "utr number",
+        "utr:",
+        "utr #",
+        "neft/rtgs",
+        "neft ref",
+        "rtgs ref",
+        "bank reference number",
+        "payment receipt attached",
+        "proof of payment",
+        "payment confirmation receipt",
+        "attached remittance",
+        "remittance advice attached",
+        "payment transfer reference",
+    ],
+    "payment_follow_up": [
+        "confirm receipt of payment",
+        "confirm payment receipt",
+        "status of pending payment",
+        "pending payment status",
+        "payment status update",
+        "when will payment be credited",
+        "expected payment date",
+        "payment will be released",
+        "payment scheduled for",
+        "accounts will release payment",
+        "confirm if payment was received",
+        "did you receive the payment",
+        "status of payment release",
+        "payment release update",
+    ],
+    "payment_dispute": [
+        "dispute the invoice",
+        "disputing invoice",
+        "dispute charge",
+        "incorrect charge",
+        "duplicate bill",
+        "duplicate billing",
+        "duplicate invoice charge",
+        "we were overcharged",
+        "tax calculation is incorrect",
+        "tax discrepancy",
+        "tax rate is wrong",
+        "withholding payment until",
+        "disputed amount",
+        "billing discrepancy",
+        "billed incorrectly",
+        "discrepancy on invoice",
+        "erroneous charge",
+    ],
+    "invoice": [
+        "invoice attached",
+        "bill for services",
+        "payment receipt",
         "statement of account",
         "quarterly audit records",
         "attached invoice",
@@ -461,21 +694,84 @@ class RuleBasedClassifier:
                 detected_signals.setdefault("follow_up", []).append(f"continuation: {short_query_match.group(1)}")
                 highest_score = max(highest_score, 1)
 
+        # Disambiguate Quotation Request vs Invoice Request:
+        # Quotation requests ("need a quote", "pricing estimate", "how much does it cost") must NEVER be classified as invoice_request
+        quotation_signals = [
+            "need a quote", "need a quotation", "quotation for", "quote for",
+            "pricing estimate", "how much does it cost", "how much will it cost",
+            "request for quote", "request for quotation", "requesting a quote", "rates for"
+        ]
+        has_quote_request = any(qs in full_text for qs in quotation_signals)
+        explicit_invoice_words = [
+            "send invoice", "share invoice", "tax invoice against", "tax invoice for",
+            "invoice copy", "duplicate invoice", "raise invoice", "post-completion billing"
+        ]
+        has_explicit_invoice = any(iw in full_text for iw in explicit_invoice_words)
+
+        if best_category in ["invoice_request", "invoice"] and has_quote_request and not has_explicit_invoice:
+            best_category = "new_enquiry"
+            detected_signals.setdefault("new_enquiry", []).append("quotation request (disambiguated from invoice)")
+
+        # Disambiguate Purchase Order vs Invoice Request against existing PO:
+        # When customer asks to send/share tax invoice against an existing PO, this is an Invoice Request, NOT a new PO!
+        invoice_request_phrases = [
+            "tax invoice against", "share the tax invoice", "share tax invoice",
+            "request for tax invoice", "request for invoice", "send us the tax invoice",
+            "send the tax invoice", "send invoice against", "include our po number on the invoice",
+            "kindly include our po number", "tax invoice against po", "invoice against po"
+        ]
+        if (best_category == "purchase_order" or "purchase_order" in detected_signals) and any(p in full_text for p in invoice_request_phrases):
+            best_category = "invoice_request"
+            detected_signals.setdefault("invoice_request", []).append("invoice request against po (disambiguated)")
+
+        # Commercial metadata and intent resolution
+        commercial_intent = "none"
+        commercial_meta: Dict[str, Any] = {}
+
+        if best_category == "purchase_order":
+            commercial_intent = "purchase_order"
+            commercial_meta = extract_po_metadata(cleaned_body, subject)
+        elif best_category == "invoice_request":
+            commercial_intent = "invoice_request"
+            commercial_meta = extract_invoice_metadata(cleaned_body, subject)
+        elif best_category == "invoice_update":
+            commercial_intent = "invoice_update"
+            commercial_meta = extract_invoice_metadata(cleaned_body, subject)
+        elif best_category == "payment_remittance":
+            commercial_intent = "payment_remittance"
+            commercial_meta = extract_payment_metadata(cleaned_body, subject)
+        elif best_category == "payment_follow_up":
+            commercial_intent = "payment_follow_up"
+            commercial_meta = extract_payment_metadata(cleaned_body, subject)
+        elif best_category == "payment_dispute":
+            commercial_intent = "payment_dispute"
+            commercial_meta = extract_invoice_metadata(cleaned_body, subject)
+        elif best_category == "invoice":
+            # Inbound invoices default to invoice_request or payment_remittance; NEVER invoice_issued
+            if any(term in full_text for term in ["utr", "wire", "remittance", "transferred", "paid"]):
+                commercial_intent = "payment_remittance"
+                best_category = "payment_remittance"
+                commercial_meta = extract_payment_metadata(cleaned_body, subject)
+            else:
+                commercial_intent = "invoice_request"
+                best_category = "invoice_request"
+                commercial_meta = extract_invoice_metadata(cleaned_body, subject)
+
         # Map to relationship and lead stage using multi-dimensional rules
         # 1. Determine Relationship
         if contact_relationship == "existing_customer":
             relationship = "existing_customer"
         elif contact_relationship == "existing_lead" or has_prior_lead or has_thread_history or is_reply:
             if best_category == "purchase_order":
-                relationship = "existing_customer"
+                relationship = "existing_customer" if contact_relationship == "existing_customer" else "existing_lead"
             else:
                 relationship = "existing_lead"
         elif best_category in ["new_enquiry", "business_clarification", "negotiation"]:
             relationship = "new_contact"
         elif best_category == "existing_lead":
             relationship = "existing_lead"
-        elif best_category in ["purchase_order", "invoice", "complaint"]:
-            relationship = "existing_customer"
+        elif best_category in ["purchase_order", "invoice_request", "invoice_update", "payment_remittance", "payment_follow_up", "payment_dispute", "complaint"]:
+            relationship = "existing_customer" if contact_relationship == "existing_customer" else "existing_lead"
         else:
             relationship = "unknown"
 
@@ -496,6 +792,7 @@ class RuleBasedClassifier:
         )
 
         # IMPORTANT: Maintain lead lifecycle and never blindly reset a valid existing stage to unknown!
+        # CRITICAL RULE: Neither PO keywords nor payment remittances should automatically mark an opportunity WON!
         if best_category == "new_enquiry":
             if has_qualification_signals:
                 lead_stage = "qualified"
@@ -520,16 +817,27 @@ class RuleBasedClassifier:
             else:
                 lead_stage = "qualified"
         elif best_category == "purchase_order":
-            lead_stage = "won"
-        elif best_category == "invoice":
-            lead_stage = "won"
+            # Do NOT mark Won solely because of a PO keyword or number!
+            if prior_lead_stage in ["negotiation", "proposal_sent", "qualified"]:
+                lead_stage = prior_lead_stage
+            elif relationship == "existing_customer":
+                lead_stage = "won"
+            else:
+                lead_stage = "negotiation"
+        elif best_category in ["invoice_request", "invoice_update", "payment_remittance", "payment_follow_up", "payment_dispute"]:
+            # Remittances and billing requests do NOT mark Won!
+            if prior_lead_stage in ["qualified", "proposal_sent", "negotiation", "won"]:
+                lead_stage = prior_lead_stage
+            elif relationship == "existing_customer":
+                lead_stage = "won"
+            else:
+                lead_stage = "qualified"
         elif best_category == "complaint":
             lead_stage = prior_lead_stage if prior_lead_stage != "unknown" else "won"
         elif best_category == "existing_lead":
             lead_stage = prior_lead_stage if prior_lead_stage not in ["unknown", "lost"] else "qualified"
         else:
             # "other" (unrelated, noise, ambiguous)
-            # If from an existing customer, preserve customer won status; if active lead, preserve active stage
             if relationship == "existing_customer":
                 lead_stage = "won"
             elif has_prior_lead and prior_lead_stage in ["qualified", "proposal_sent", "negotiation"]:
@@ -538,19 +846,15 @@ class RuleBasedClassifier:
                 lead_stage = "unknown"
 
         # 3. Calculate Confidence Score
-        # Adhering strictly to section 7 thresholds:
-        # >= 0.85: eligible for auto classification
-        # 0.60 - 0.84: review recommended
-        # < 0.60: needs review
         if highest_score >= 3:
             confidence = 0.90
         elif highest_score == 2:
             confidence = 0.86
         elif highest_score == 1:
-            if (has_thread_history or has_prior_lead) and best_category in ["follow_up", "business_clarification", "negotiation"]:
-                confidence = 0.88  # Boosted by confirmed conversational history
+            if (has_thread_history or has_prior_lead) and best_category in ["follow_up", "business_clarification", "negotiation", "payment_follow_up"]:
+                confidence = 0.88
             else:
-                confidence = 0.72
+                confidence = 0.75
         else:
             # No signals matched
             if best_category == "other":
@@ -578,4 +882,6 @@ class RuleBasedClassifier:
             negations=detected_negations,
             reason=reason,
             context_used=context_used_desc,
+            commercial_intent=commercial_intent,
+            commercial_metadata=commercial_meta,
         )

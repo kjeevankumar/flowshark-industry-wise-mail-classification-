@@ -263,12 +263,26 @@ def generate_actionable_tasks(
         tasks.append("Draft addendum to the existing agreement covering additional hours.")
 
     if pipeline_category == "purchase_orders" or intent == "purchase_order":
+        tasks.append("Prepare tax invoice for PO (Accounts Team).")
         tasks.append("Acknowledge PO receipt and initiate order fulfillment.")
-        tasks.append("Schedule project kickoff meeting with client stakeholders.")
+
+    if pipeline_category == "invoice_request" or intent == "invoice_request":
+        tasks.append("Issue requested tax invoice or duplicate copy to client (Accounts Team).")
+
+    if pipeline_category == "invoice_update" or intent == "invoice_update":
+        tasks.append("Process invoice update (GST / billing address / amount revision) (Accounts Team).")
+
+    if pipeline_category == "payment_remittance" or intent == "payment_remittance":
+        tasks.append("Verify payment remittance advice against bank records and accounting ledger (Accounts Team).")
+
+    if pipeline_category == "payment_follow_up" or intent == "payment_follow_up":
+        tasks.append("Confirm payment credit status with accounts and respond to customer with statement.")
+
+    if pipeline_category == "payment_dispute" or intent == "payment_dispute":
+        tasks.append("Investigate billing dispute and reconcile account with client (Accounts Team - High Priority).")
 
     if pipeline_category == "invoices" or intent == "invoice":
-        tasks.append("Verify payment remittance against bank records and accounting ledger.")
-        tasks.append("Issue formal payment receipt to customer accounts department.")
+        tasks.append("Review billing record and verify payment remittance against accounting ledger (Accounts Team).")
 
     if not tasks:
         tasks = [
