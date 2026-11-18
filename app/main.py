@@ -67,9 +67,9 @@ async def lifespan(app: FastAPI):
             if emails_to_reclassify:
                 for em in emails_to_reclassify:
                     try:
-                        classifier.classify_email(em, force_reclassify=True)
-                    except Exception:
-                        pass
+                        classifier.classify_email(em, audit_reclassification=False)
+                    except Exception as reclass_err:
+                        logger.warning("Startup reclassification error on email %s: %s", em.id, str(reclass_err))
                 logger.info("Startup re-classification completed for %d emails.", len(emails_to_reclassify))
     except Exception as err:
         logger.warning("Startup re-classification check failed: %s", str(err))

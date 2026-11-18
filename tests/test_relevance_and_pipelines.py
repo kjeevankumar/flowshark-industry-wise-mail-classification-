@@ -325,6 +325,73 @@ class TestHybridClassificationAndCRMIntegration:
         assert cls_after.relationship == "existing_lead"
         assert cls_after.intent == "negotiation"
 
+    def test_existing_lead_pipeline_assignment(self, test_db):
+        """Test ongoing project deployment and phase 2 weekly sync classifies strictly to existing_leads."""
+        session, mb = test_db
+        email = Email(
+            mailbox_id=mb.id,
+            account_email=mb.email_address,
+            imap_uid="904",
+            uid_validity=1,
+            sender="cto@clientcorp.com",
+            subject="Project update & Phase 2 scope",
+            body_text="Following up on our weekly sync yesterday regarding our ongoing deployment with your team. As discussed, our initial rollout is progressing well, and we would like to scope Phase 2 feature additions. Please send over an addendum to our existing agreement for the additional hours needed.",
+        )
+        session.add(email)
+        session.commit()
+
+        classifier = HybridClassifier(db=session)
+        cls = classifier.classify_email(email)
+
+        assert cls.is_business_relevant is True
+        assert cls.pipeline_category == "existing_leads"
+        assert cls.relationship == "existing_lead"
+        assert cls.intent == "existing_lead"
+
+    def test_needs_review_pipeline_assignment(self, test_db):
+        """Test ambiguous message with no clear sales intent enters needs_review pipeline."""
+        session, mb = test_db
+        email = Email(
+            mailbox_id=mb.id,
+            account_email=mb.email_address,
+            imap_uid="905",
+            uid_validity=1,
+            sender="someone@randomsite.com",
+            subject="Quick note",
+            body_text="Hello, not sure who to direct this to, but check this link out.",
+        )
+        session.add(email)
+        session.commit()
+
+        classifier = HybridClassifier(db=session)
+        cls = classifier.classify_email(email)
+
+        assert cls.is_business_relevant is True
+        assert cls.pipeline_category == "needs_review"
+        assert cls.requires_human_review is True
+
+    def test_google_alert_never_in_needs_review(self, test_db):
+        """Test Google Security alert is non-business and never appears in needs_review pipeline."""
+        session, mb = test_db
+        email = Email(
+            mailbox_id=mb.id,
+            account_email=mb.email_address,
+            imap_uid="906",
+            uid_validity=1,
+            sender="no-reply@accounts.google.com",
+            subject="Security alert: 2-Step Verification turned on",
+            body_text="2-Step Verification was turned on for your Google Account. If this was not you, review your account security.",
+        )
+        session.add(email)
+        session.commit()
+
+        classifier = HybridClassifier(db=session)
+        cls = classifier.classify_email(email)
+
+        assert cls.is_business_relevant is False
+        assert cls.pipeline_category is None
+        assert cls.pipeline_category != "needs_review"
+
 
 class TestMailboxSafeRemoval:
     """Test complete removal of a specific mailbox without impacting others."""

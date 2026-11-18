@@ -49,7 +49,7 @@ class HybridClassifier:
         self.industry_rule_engine = IndustryRuleClassifier()
         self.llm_provider: BaseLLMProvider = get_llm_provider(settings=self.settings)
 
-    def classify_email(self, email_record: Email, audit_reclassification: bool = True) -> Classification:
+    def classify_email(self, email_record: Email, audit_reclassification: bool = True, force_reclassify: bool = False) -> Classification:
         """Execute full context-aware classification pipeline for a single email record."""
         # Check if manual correction exists and should be preserved
         existing_class = (
@@ -57,7 +57,7 @@ class HybridClassifier:
             .filter(Classification.email_id == email_record.id)
             .first()
         )
-        if existing_class and existing_class.classification_method == "manual_correction" and audit_reclassification:
+        if existing_class and existing_class.classification_method == "manual_correction" and audit_reclassification and not force_reclassify:
             logger.info("Preserving manual correction for email id %s", email_record.id)
             return existing_class
 
@@ -380,8 +380,15 @@ class HybridClassifier:
             is_reply=bool(context and context.is_reply),
             has_thread=bool(context and context.has_context),
             key_signals=output.key_signals,
+            subject=email_record.subject,
+            body=preprocessed.cleaned_body,
         )
         final_pipeline_category = pipe_res.pipeline_category
+        final_relationship = pipe_res.relationship or final_relationship
+        final_intent = pipe_res.intent or final_intent
+        final_lead_stage = pipe_res.lead_stage or final_lead_stage
+        if pipe_res.needs_review or final_pipeline_category == "needs_review":
+            requires_review = True
 
         # 10. Persistence and Audit Trail in Classification & ClassificationHistory
         existing_class = (

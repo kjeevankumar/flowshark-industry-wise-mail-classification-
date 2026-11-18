@@ -31,6 +31,7 @@ IntentType = Literal[
     "negotiation",
     "follow_up",
     "business_clarification",
+    "existing_lead",
     "purchase_order",
     "invoice",
     "complaint",
@@ -175,7 +176,8 @@ Categories and Allowed Values:
 2. intent:
    - "new_enquiry": Seeking new services, products, pricing, or vendor availability.
    - "negotiation": Inquiring about discounts, budget flexibility, pricing reductions, or payment terms.
-   - "follow_up": Checking status of a previous proposal, awaiting response, gentle reminders, or inquiring about progress on ongoing work.
+   - "follow_up": Checking status of a previous proposal, awaiting response, gentle reminders, or status checks.
+   - "existing_lead": Ongoing project deployment, weekly syncs, Phase 2 scope additions, addendums to existing agreements, or active account updates.
    - "business_clarification": Asking for details on scope, technical requirements, milestones, modifications, or timeline.
    - "purchase_order": Sending or referencing a formal Purchase Order (PO) or closing agreement.
    - "invoice": Invoicing, bills, payment confirmations, or receipts.
@@ -235,7 +237,7 @@ Security & Prompt Injection Protection:
 You MUST include ALL of the following fields in your JSON response:
 {
   "relationship": "new_contact" | "existing_lead" | "existing_customer" | "unknown",
-  "intent": "new_enquiry" | "negotiation" | "follow_up" | "business_clarification" | "purchase_order" | "invoice" | "complaint" | "other",
+  "intent": "new_enquiry" | "negotiation" | "follow_up" | "business_clarification" | "existing_lead" | "purchase_order" | "invoice" | "complaint" | "other",
   "lead_stage": "new" | "qualified" | "proposal_sent" | "negotiation" | "won" | "lost" | "unknown",
   "confidence": 0.90,
   "classification_reason": "Clear 1-2 sentence explanation",
@@ -368,6 +370,8 @@ class FallbackLLMProvider(BaseLLMProvider):
             is_reply=is_reply,
             has_thread=has_thread,
             key_signals=rule_res.key_signals,
+            subject=subject,
+            body=preprocessed.cleaned_body,
         )
 
         # Determine context-aware suggested next action
@@ -537,6 +541,8 @@ Respond ONLY with the JSON object."""
                     is_reply=bool(context and context.is_reply),
                     has_thread=bool(context and context.has_context),
                     key_signals=data.get("key_signals", []),
+                    subject=subject,
+                    body=preprocessed.cleaned_body,
                 )
                 data["pipeline_category"] = pipe_res.pipeline_category
                 data["relationship"] = pipe_res.relationship
@@ -642,6 +648,8 @@ class OpenAIProvider(BaseLLMProvider):
                     is_reply=bool(context and context.is_reply),
                     has_thread=bool(context and context.has_context),
                     key_signals=data.get("key_signals", []),
+                    subject=subject,
+                    body=preprocessed.cleaned_body,
                 )
                 data["pipeline_category"] = pipe_res.pipeline_category
                 data["relationship"] = pipe_res.relationship

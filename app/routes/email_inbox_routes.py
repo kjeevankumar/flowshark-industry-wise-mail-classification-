@@ -221,7 +221,7 @@ def list_emails(
             query = query.filter(
                 Classification.is_business_relevant != False,  # noqa: E712
                 (Classification.pipeline_category == "existing_leads")
-                | ((Classification.relationship == "existing_lead") & (~Classification.intent.in_(["new_enquiry", "negotiation", "follow_up", "business_clarification", "purchase_order", "invoice"]))),
+                | (Classification.intent == "existing_lead"),
             )
         elif cat == "purchase_orders":
             query = query.filter(
@@ -237,9 +237,12 @@ def list_emails(
             )
         elif cat == "needs_review":
             query = query.filter(
-                (Classification.pipeline_category == "needs_review")
-                | (Classification.intent == "other")
-                | (Classification.requires_human_review == True)  # noqa: E712
+                Classification.is_business_relevant != False,  # noqa: E712
+                (
+                    (Classification.pipeline_category == "needs_review")
+                    | (Classification.intent.in_(["other", "needs_review"]))
+                    | (Classification.requires_human_review == True)  # noqa: E712
+                ),
             )
         elif cat in ("system_notifications", "non_business", "automated_notifications"):
             query = query.filter(Classification.is_business_relevant == False)  # noqa: E712

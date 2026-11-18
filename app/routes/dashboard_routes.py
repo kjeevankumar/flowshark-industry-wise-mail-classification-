@@ -95,7 +95,7 @@ def get_dashboard_summary(
     ).count()
     existing_leads_count = biz_class_q.filter(
         (Classification.pipeline_category == "existing_leads")
-        | ((Classification.relationship == "existing_lead") & (~Classification.intent.in_(["new_enquiry", "negotiation", "follow_up", "business_clarification", "purchase_order", "invoice"])))
+        | (Classification.intent == "existing_lead")
     ).count()
     purchase_orders_count = biz_class_q.filter(
         (Classification.pipeline_category == "purchase_orders")
@@ -107,7 +107,7 @@ def get_dashboard_summary(
     ).count()
     needs_review_count = biz_class_q.filter(
         (Classification.pipeline_category == "needs_review")
-        | (Classification.intent == "other")
+        | (Classification.intent.in_(["other", "needs_review"]))
         | (Classification.requires_human_review == True)
     ).count()
     human_corrected_count = db.query(ClassificationHistory).filter(ClassificationHistory.mailbox_id == mid).count()

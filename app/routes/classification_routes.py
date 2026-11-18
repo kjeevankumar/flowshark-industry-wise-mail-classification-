@@ -770,6 +770,8 @@ def simulate_or_test_demo_email(
         lead_stage=rule_res.lead_stage,
         confidence=rule_res.confidence,
         key_signals=rule_res.key_signals,
+        subject=subject,
+        body=preprocessed.cleaned_body,
     )
 
     exec_exp = generate_executive_explanation(

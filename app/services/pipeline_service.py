@@ -46,6 +46,8 @@ class PipelineClassifier:
         is_reply: bool = False,
         has_thread: bool = False,
         key_signals: Optional[List[str]] = None,
+        subject: Optional[str] = None,
+        body: Optional[str] = None,
     ) -> PipelineAssignmentResult:
         """Deterministically determine pipeline category ensuring no false pipeline assignments."""
 
@@ -99,7 +101,37 @@ class PipelineClassifier:
                 needs_review=False,
             )
 
-        # Rule 5: Follow-ups
+        # Rule 5: Existing Leads (Ongoing project deployment, Phase 2 expansion, weekly syncs, addendums)
+        existing_lead_keywords = [
+            "weekly sync", "ongoing deployment", "initial rollout", "phase 2",
+            "scope phase 2", "phase 2 feature additions", "phase 2 additions", "phase 2 rollout",
+            "addendum to our existing agreement", "addendum to our agreement",
+            "addendum to the agreement", "additional hours needed", "additional hours",
+            "scope expansion", "existing agreement", "existing contract", "existing engagement",
+            "existing account", "existing client", "project update & phase 2", "project update",
+            "sprint update", "status of our ongoing", "progress of our ongoing",
+            "account review", "quarterly business review", "qbr", "current deployment", "current rollout"
+        ]
+        has_existing_lead_signals = any(
+            any(phrase in s.lower() for phrase in existing_lead_keywords)
+            for s in signals
+        )
+        combined_text = f"{subject or ''} {body or ''}".lower()
+        if any(phrase in combined_text for phrase in existing_lead_keywords):
+            has_existing_lead_signals = True
+
+        if intent == "existing_lead" or has_existing_lead_signals:
+            return PipelineAssignmentResult(
+                pipeline_category="existing_leads",
+                relationship="existing_lead",
+                intent="existing_lead",
+                lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
+                confidence=max(confidence, 0.90),
+                reason="Ongoing project deployment, phase 2 expansion, or active account communication.",
+                needs_review=False,
+            )
+
+        # Rule 6: Follow-ups
         if intent == "follow_up":
             return PipelineAssignmentResult(
                 pipeline_category="follow_ups",
@@ -111,7 +143,7 @@ class PipelineClassifier:
                 needs_review=False,
             )
 
-        # Rule 6: Clarifications
+        # Rule 7: Clarifications
         if intent == "business_clarification":
             return PipelineAssignmentResult(
                 pipeline_category="clarifications",
@@ -123,7 +155,7 @@ class PipelineClassifier:
                 needs_review=False,
             )
 
-        # Rule 7: New Leads
+        # Rule 8: New Leads
         if intent == "new_enquiry":
             return PipelineAssignmentResult(
                 pipeline_category="new_leads",
@@ -135,16 +167,13 @@ class PipelineClassifier:
                 needs_review=False,
             )
 
-        # Rule 8: Existing Leads
-        # A known sender with an active opportunity who is sending a business communication
-        # not specifically negotiations, follow_ups, or clarifications
+        # Fallback for known contacts with active lead
         if relationship == "existing_lead" and is_business_relevant:
-            # If confidence is good, assign to existing_leads
             if confidence >= 0.75:
                 return PipelineAssignmentResult(
                     pipeline_category="existing_leads",
                     relationship="existing_lead",
-                    intent=intent or "business_clarification",
+                    intent=intent or "existing_lead",
                     lead_stage=lead_stage if lead_stage not in ["unknown", None] else "qualified",
                     confidence=confidence,
                     reason="Active business opportunity communication from known lead.",
@@ -153,7 +182,7 @@ class PipelineClassifier:
 
         # Rule 9: Needs Review
         # Used when confidence is genuinely insufficient or signals conflict
-        if confidence < 0.85 or intent in ["other", "unknown", None]:
+        if confidence < 0.85 or intent in ["other", "unknown", "needs_review", None]:
             return PipelineAssignmentResult(
                 pipeline_category="needs_review",
                 relationship=relationship or "unknown",

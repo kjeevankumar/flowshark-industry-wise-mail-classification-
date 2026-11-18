@@ -332,6 +332,40 @@ DEFAULT_INTENT_SIGNALS: Dict[str, List[str]] = {
         "critical bug",
         "disappointed with the service",
     ],
+    "existing_lead": [
+        "weekly sync",
+        "following up on our weekly sync",
+        "our weekly sync",
+        "ongoing deployment",
+        "ongoing project",
+        "ongoing engagement",
+        "current engagement",
+        "initial rollout",
+        "initial rollout is progressing",
+        "phase 2",
+        "scope phase 2",
+        "phase 2 feature additions",
+        "phase 2 additions",
+        "phase 2 rollout",
+        "addendum to our existing agreement",
+        "addendum to our agreement",
+        "addendum to the agreement",
+        "additional hours needed",
+        "additional hours",
+        "scope expansion",
+        "existing agreement",
+        "existing contract",
+        "existing account",
+        "existing client",
+        "project update & phase 2",
+        "project update",
+        "sprint update",
+        "status of our ongoing",
+        "progress of our ongoing",
+        "account review",
+        "quarterly business review",
+        "qbr",
+    ],
 }
 
 
@@ -438,6 +472,8 @@ class RuleBasedClassifier:
                 relationship = "existing_lead"
         elif best_category in ["new_enquiry", "business_clarification", "negotiation"]:
             relationship = "new_contact"
+        elif best_category == "existing_lead":
+            relationship = "existing_lead"
         elif best_category in ["purchase_order", "invoice", "complaint"]:
             relationship = "existing_customer"
         else:
@@ -489,6 +525,8 @@ class RuleBasedClassifier:
             lead_stage = "won"
         elif best_category == "complaint":
             lead_stage = prior_lead_stage if prior_lead_stage != "unknown" else "won"
+        elif best_category == "existing_lead":
+            lead_stage = prior_lead_stage if prior_lead_stage not in ["unknown", "lost"] else "qualified"
         else:
             # "other" (unrelated, noise, ambiguous)
             # If from an existing customer, preserve customer won status; if active lead, preserve active stage
