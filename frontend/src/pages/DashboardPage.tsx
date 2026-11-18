@@ -25,6 +25,9 @@ import { DemoEmailModal } from '../components/DemoEmailModal';
 import { api } from '../services/api';
 import { formatReceivedDateTime } from '../utils/dateUtils';
 
+// Feature flag: Temporarily hide Invoice & Billing and Payments from dashboard cards during testing
+const SHOW_INVOICE_AND_PAYMENTS = false;
+
 interface DashboardPageProps {
   summary: DashboardSummary | null;
   onNavigate: (tab: string, category?: string) => void;
@@ -155,26 +158,30 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       category: 'purchase_orders',
       desc: 'POs & order agreements',
     },
-    {
-      title: 'Invoice & Billing',
-      count: summary?.invoice_billing_count ?? summary?.invoices_count ?? 0,
-      icon: Receipt,
-      color: 'violet',
-      bg: 'bg-violet-50 text-violet-600',
-      tab: 'inbox',
-      category: 'invoice_billing',
-      desc: 'Invoice requests & updates',
-    },
-    {
-      title: 'Payments',
-      count: summary?.payments_count ?? 0,
-      icon: CreditCard,
-      color: 'indigo',
-      bg: 'bg-indigo-50 text-indigo-600',
-      tab: 'inbox',
-      category: 'payments',
-      desc: 'Remittances & disputes',
-    },
+    ...(SHOW_INVOICE_AND_PAYMENTS
+      ? [
+          {
+            title: 'Invoice & Billing',
+            count: summary?.invoice_billing_count ?? summary?.invoices_count ?? 0,
+            icon: Receipt,
+            color: 'violet',
+            bg: 'bg-violet-50 text-violet-600',
+            tab: 'inbox',
+            category: 'invoice_billing',
+            desc: 'Invoice requests & updates',
+          },
+          {
+            title: 'Payments',
+            count: summary?.payments_count ?? 0,
+            icon: CreditCard,
+            color: 'indigo',
+            bg: 'bg-indigo-50 text-indigo-600',
+            tab: 'inbox',
+            category: 'payments',
+            desc: 'Remittances & disputes',
+          },
+        ]
+      : []),
     {
       title: 'Needs Review',
       count: summary?.needs_review_count ?? 0,
@@ -231,8 +238,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards Grid (8 Lead Pipelines) */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* KPI Cards Grid (Active Lead Pipelines) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {cards.map((card, i) => {
           const Icon = card.icon;
           return (

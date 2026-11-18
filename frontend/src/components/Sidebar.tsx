@@ -20,6 +20,9 @@ import {
 } from 'lucide-react';
 import { DashboardSummary } from '../types';
 
+// Feature flag: Temporarily hide Invoice & Billing and Payments from active dashboard navigation during testing
+const SHOW_INVOICE_AND_PAYMENTS = false;
+
 interface SidebarProps {
   currentTab: string;
   categoryFilter?: string;
@@ -212,136 +215,140 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
 
-          {/* 2. Invoice & Billing Group */}
-          <div>
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => onNavigate('inbox', 'invoice_billing')}
-                className={`flex-1 flex items-center justify-between px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
-                  isNavActive('inbox', 'invoice_billing')
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center space-x-2.5">
-                  <Receipt className="w-4 h-4 text-violet-500" />
-                  <span>Invoice & Billing</span>
-                </div>
-                {invoiceBillingTotal > 0 && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                    isNavActive('inbox', 'invoice_billing') ? 'bg-indigo-700 text-white' : 'bg-violet-100 text-violet-800'
-                  }`}>
-                    {invoiceBillingTotal}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setInvoiceMenuOpen(!invoiceMenuOpen)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 ml-1"
-                title="Toggle subcategories"
-              >
-                {invoiceMenuOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-
-            {invoiceMenuOpen && (
-              <div className="mt-0.5 space-y-0.5">
-                <button onClick={() => onNavigate('inbox', 'invoice_request')} className={navClass('inbox', 'invoice_request', true)}>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
-                    <span>Invoice Request</span>
+          {/* 2. Invoice & Billing Group (Temporarily disabled for core testing) */}
+          {SHOW_INVOICE_AND_PAYMENTS && (
+            <div>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => onNavigate('inbox', 'invoice_billing')}
+                  className={`flex-1 flex items-center justify-between px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                    isNavActive('inbox', 'invoice_billing')
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <Receipt className="w-4 h-4 text-violet-500" />
+                    <span>Invoice & Billing</span>
                   </div>
-                  {summary && (summary.invoice_requests_count ?? 0) > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
-                      {summary.invoice_requests_count}
+                  {invoiceBillingTotal > 0 && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                      isNavActive('inbox', 'invoice_billing') ? 'bg-indigo-700 text-white' : 'bg-violet-100 text-violet-800'
+                    }`}>
+                      {invoiceBillingTotal}
                     </span>
                   )}
                 </button>
-                <button onClick={() => onNavigate('inbox', 'invoice_update')} className={navClass('inbox', 'invoice_update', true)}>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                    <span>Invoice Update</span>
-                  </div>
-                  {summary && (summary.invoice_updates_count ?? 0) > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
-                      {summary.invoice_updates_count}
-                    </span>
-                  )}
+                <button
+                  onClick={() => setInvoiceMenuOpen(!invoiceMenuOpen)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 ml-1"
+                  title="Toggle subcategories"
+                >
+                  {invoiceMenuOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
               </div>
-            )}
-          </div>
 
-          {/* 3. Payments Group */}
-          <div>
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => onNavigate('inbox', 'payments')}
-                className={`flex-1 flex items-center justify-between px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
-                  isNavActive('inbox', 'payments')
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center space-x-2.5">
-                  <CreditCard className="w-4 h-4 text-emerald-600" />
-                  <span>Payments</span>
+              {invoiceMenuOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  <button onClick={() => onNavigate('inbox', 'invoice_request')} className={navClass('inbox', 'invoice_request', true)}>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400"></span>
+                      <span>Invoice Request</span>
+                    </div>
+                    {summary && (summary.invoice_requests_count ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                        {summary.invoice_requests_count}
+                      </span>
+                    )}
+                  </button>
+                  <button onClick={() => onNavigate('inbox', 'invoice_update')} className={navClass('inbox', 'invoice_update', true)}>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                      <span>Invoice Update</span>
+                    </div>
+                    {summary && (summary.invoice_updates_count ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                        {summary.invoice_updates_count}
+                      </span>
+                    )}
+                  </button>
                 </div>
-                {paymentsTotal > 0 && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                    isNavActive('inbox', 'payments') ? 'bg-indigo-700 text-white' : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    {paymentsTotal}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setPaymentMenuOpen(!paymentMenuOpen)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 ml-1"
-                title="Toggle subcategories"
-              >
-                {paymentMenuOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-              </button>
+              )}
             </div>
+          )}
 
-            {paymentMenuOpen && (
-              <div className="mt-0.5 space-y-0.5">
-                <button onClick={() => onNavigate('inbox', 'payment_remittance')} className={navClass('inbox', 'payment_remittance', true)}>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    <span>Remittance Advice</span>
+          {/* 3. Payments Group (Temporarily disabled for core testing) */}
+          {SHOW_INVOICE_AND_PAYMENTS && (
+            <div>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => onNavigate('inbox', 'payments')}
+                  className={`flex-1 flex items-center justify-between px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
+                    isNavActive('inbox', 'payments')
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <CreditCard className="w-4 h-4 text-emerald-600" />
+                    <span>Payments</span>
                   </div>
-                  {summary && (summary.payment_remittances_count ?? 0) > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
-                      {summary.payment_remittances_count}
+                  {paymentsTotal > 0 && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                      isNavActive('inbox', 'payments') ? 'bg-indigo-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {paymentsTotal}
                     </span>
                   )}
                 </button>
-                <button onClick={() => onNavigate('inbox', 'payment_follow_up')} className={navClass('inbox', 'payment_follow_up', true)}>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
-                    <span>Payment Follow-up</span>
-                  </div>
-                  {summary && (summary.payment_followups_count ?? 0) > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
-                      {summary.payment_followups_count}
-                    </span>
-                  )}
-                </button>
-                <button onClick={() => onNavigate('inbox', 'payment_dispute')} className={navClass('inbox', 'payment_dispute', true)}>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                    <span>Payment Dispute</span>
-                  </div>
-                  {summary && (summary.payment_disputes_count ?? 0) > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-rose-100 text-rose-800">
-                      {summary.payment_disputes_count}
-                    </span>
-                  )}
+                <button
+                  onClick={() => setPaymentMenuOpen(!paymentMenuOpen)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 ml-1"
+                  title="Toggle subcategories"
+                >
+                  {paymentMenuOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
               </div>
-            )}
-          </div>
+
+              {paymentMenuOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  <button onClick={() => onNavigate('inbox', 'payment_remittance')} className={navClass('inbox', 'payment_remittance', true)}>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span>Remittance Advice</span>
+                    </div>
+                    {summary && (summary.payment_remittances_count ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                        {summary.payment_remittances_count}
+                      </span>
+                    )}
+                  </button>
+                  <button onClick={() => onNavigate('inbox', 'payment_follow_up')} className={navClass('inbox', 'payment_follow_up', true)}>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                      <span>Payment Follow-up</span>
+                    </div>
+                    {summary && (summary.payment_followups_count ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-slate-100 text-slate-600">
+                        {summary.payment_followups_count}
+                      </span>
+                    )}
+                  </button>
+                  <button onClick={() => onNavigate('inbox', 'payment_dispute')} className={navClass('inbox', 'payment_dispute', true)}>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                      <span>Payment Dispute</span>
+                    </div>
+                    {summary && (summary.payment_disputes_count ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full font-medium bg-rose-100 text-rose-800">
+                        {summary.payment_disputes_count}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <button onClick={() => onNavigate('inbox', 'needs_review')} className={navClass('inbox', 'needs_review')}>
             <div className="flex items-center space-x-2.5">

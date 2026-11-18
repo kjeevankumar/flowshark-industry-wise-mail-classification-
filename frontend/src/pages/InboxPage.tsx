@@ -189,68 +189,68 @@ export const InboxPage: React.FC<InboxPageProps> = ({
     }
     const emptyStates: Record<string, { title: string; desc: string }> = {
       purchase_orders: {
-        title: 'No purchase orders found.',
-        desc: 'Official PO documents and purchase confirmations will appear here.',
+        title: 'No purchase orders found',
+        desc: 'No emails found in this pipeline. Official PO documents and purchase confirmations will appear here.',
       },
       invoice_billing: {
-        title: 'No invoice or billing records found.',
-        desc: 'Invoice requests and billing update communications will appear here.',
+        title: 'No invoice or billing records found',
+        desc: 'No emails found in this pipeline. Invoice requests and billing update communications will appear here.',
       },
       invoices: {
-        title: 'No invoice requests found.',
-        desc: 'No invoice or billing communications currently exist in this mailbox.',
+        title: 'No invoice requests found',
+        desc: 'No emails found in this pipeline. No invoice or billing communications currently exist in this mailbox.',
       },
       invoice_request: {
-        title: 'No invoice requests found.',
-        desc: 'No emails requesting invoices or tax billing copies currently exist in this mailbox.',
+        title: 'No invoice requests found',
+        desc: 'No emails found in this pipeline. No emails requesting invoices or tax billing copies currently exist in this mailbox.',
       },
       invoice_update: {
-        title: 'No invoice updates found.',
-        desc: 'No emails requesting invoice amendments or GSTIN corrections currently exist in this mailbox.',
+        title: 'No invoice updates found',
+        desc: 'No emails found in this pipeline. No emails requesting invoice amendments or GSTIN corrections currently exist in this mailbox.',
       },
       payments: {
-        title: 'No payment communications found.',
-        desc: 'Payment remittances, payment follow-ups, and billing disputes will appear here.',
+        title: 'No payment communications found',
+        desc: 'No emails found in this pipeline. Payment remittances, payment follow-ups, and billing disputes will appear here.',
       },
       payment_remittance: {
-        title: 'No payment remittances found.',
-        desc: 'No remittance advice or UTR payment transfer confirmations found.',
+        title: 'No payment remittances found',
+        desc: 'No emails found in this pipeline. No remittance advice or UTR payment transfer confirmations found.',
       },
       payment_follow_up: {
-        title: 'No payment follow-ups found.',
-        desc: 'No pending payment follow-up inquiries found in this mailbox.',
+        title: 'No payment follow-ups found',
+        desc: 'No emails found in this pipeline. No pending payment follow-up inquiries found in this mailbox.',
       },
       payment_dispute: {
-        title: 'No payment disputes found.',
-        desc: 'No disputed invoices or billing discrepancy emails found.',
+        title: 'No payment disputes found',
+        desc: 'No emails found in this pipeline. No disputed invoices or billing discrepancy emails found.',
       },
       new_leads: {
-        title: 'No new leads found.',
-        desc: 'New business inquiries and discovery emails will appear here.',
+        title: 'No new leads found',
+        desc: 'No emails found in this pipeline. First-time business inquiries and RFQs will appear here.',
       },
       negotiations: {
-        title: 'No negotiations found.',
-        desc: 'Commercial discussions, rate revisions, and contract negotiations will appear here.',
+        title: 'No negotiations found',
+        desc: 'No emails found in this pipeline. Commercial discussions, rate revisions, and contract negotiations will appear here.',
       },
       follow_ups: {
-        title: 'No follow-ups found.',
-        desc: 'Milestone check-ins, proposal follow-ups, and project status updates will appear here.',
+        title: 'No follow-ups found',
+        desc: 'No emails found in this pipeline. Milestone check-ins, proposal follow-ups, and project status updates will appear here.',
       },
       clarifications: {
-        title: 'No clarifications found.',
-        desc: 'Scope inquiries and technical requirement questions will appear here.',
+        title: 'No clarifications found',
+        desc: 'No emails found in this pipeline. Scope inquiries and technical requirement questions will appear here.',
       },
       business_clarifications: {
-        title: 'No clarifications found.',
-        desc: 'Scope inquiries and technical requirement questions will appear here.',
+        title: 'No clarifications found',
+        desc: 'No emails found in this pipeline. Scope inquiries and technical requirement questions will appear here.',
       },
       existing_leads: {
-        title: 'No existing leads found.',
-        desc: 'Follow-on opportunities from existing clients will appear here.',
+        title: 'No existing leads found',
+        desc: 'No emails found in this pipeline. Follow-on opportunities from existing clients will appear here.',
       },
       needs_review: {
-        title: 'No emails needing review.',
-        desc: 'Emails with ambiguous classification signals requiring human triage will appear here.',
+        title: 'No emails needing review',
+        desc: 'No emails found in this pipeline. Emails requiring human review will appear here.',
       },
       system_notifications: {
         title: 'Zero non-business alerts in database',

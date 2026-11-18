@@ -73,9 +73,9 @@ def get_dashboard_summary(
 
     mid = active_mb.id
 
-    # Base queries scoped strictly to active mailbox
+    # Base queries scoped strictly to active mailbox and existing emails
     email_q = db.query(Email).filter(Email.mailbox_id == mid)
-    class_q = db.query(Classification).filter(Classification.mailbox_id == mid)
+    class_q = db.query(Classification).join(Email, Classification.email_id == Email.id).filter(Email.mailbox_id == mid)
 
     total_synced = email_q.count()
     total_classified = class_q.count()
