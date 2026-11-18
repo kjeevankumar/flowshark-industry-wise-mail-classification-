@@ -454,12 +454,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold uppercase text-[10px]">
                 <tr>
                   <th className="px-5 py-3">Sender</th>
-                  <th className="px-5 py-3">Subject</th>
-                  <th className="px-5 py-3">Relationship</th>
-                  <th className="px-5 py-3">Intent</th>
-                  <th className="px-5 py-3">Stage</th>
+                  <th className="px-5 py-3">Subject & Preview</th>
+                  <th className="px-5 py-3">Classification</th>
                   <th className="px-5 py-3">Industry</th>
-                  <th className="px-5 py-3">Confidence</th>
                   <th className="px-5 py-3">Received</th>
                 </tr>
               </thead>
@@ -480,13 +477,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                         <p className="text-[11px] text-slate-400 truncate mt-0.5">{email.snippet}</p>
                       </td>
                       <td className="px-5 py-3.5">
-                        {c ? <Badge type="relationship" value={c.relationship} /> : <span className="text-slate-400">Unclassified</span>}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {c ? <Badge type="intent" value={c.intent} /> : <span className="text-slate-400">-</span>}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {c ? <Badge type="stage" value={c.lead_stage} /> : <span className="text-slate-400">-</span>}
+                        {c ? (
+                          <Badge type="classification" value={c.pipeline_category || c.intent} />
+                        ) : (
+                          <span className="text-slate-400">Unclassified</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         {c && (c.target_industry || c.sender_industry) ? (
@@ -499,9 +494,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                         ) : (
                           <span className="text-slate-400">-</span>
                         )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {c ? <Badge type="confidence" value={c.confidence} /> : <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap text-xs font-medium">
                         {formatReceivedDateTime(email.received_at)}

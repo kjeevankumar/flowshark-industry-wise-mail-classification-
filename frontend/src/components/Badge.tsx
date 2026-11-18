@@ -2,12 +2,69 @@ import React from 'react';
 import { Relationship, Intent, LeadStage } from '../types';
 
 interface BadgeProps {
-  type: 'relationship' | 'intent' | 'stage' | 'confidence' | 'method' | 'industry' | 'relevance' | 'pipeline';
+  type: 'relationship' | 'intent' | 'stage' | 'confidence' | 'method' | 'industry' | 'relevance' | 'pipeline' | 'classification';
   value: string | number;
   className?: string;
 }
 
 export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => {
+  if (type === 'classification' || type === 'pipeline') {
+    const rawVal = String(value || '').toLowerCase().trim();
+    const canonicalMap: Record<string, string> = {
+      new_leads: 'new_leads',
+      new_enquiry: 'new_leads',
+      new_lead: 'new_leads',
+      negotiations: 'negotiations',
+      negotiation: 'negotiations',
+      follow_ups: 'follow_ups',
+      follow_up: 'follow_ups',
+      clarifications: 'clarifications',
+      business_clarification: 'clarifications',
+      clarification: 'clarifications',
+      existing_leads: 'existing_leads',
+      existing_lead: 'existing_leads',
+      purchase_orders: 'purchase_orders',
+      purchase_order: 'purchase_orders',
+      invoices: 'invoices',
+      invoice: 'invoices',
+      needs_review: 'needs_review',
+      review: 'needs_review',
+      other: 'needs_review',
+      complaint: 'needs_review',
+      system_notification: 'system_notification',
+      account_security_notification: 'system_notification',
+      non_business: 'system_notification',
+    };
+    const key = canonicalMap[rawVal] || (rawVal.includes('security') || rawVal.includes('system') ? 'system_notification' : 'needs_review');
+
+    const styles: Record<string, string> = {
+      new_leads: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold',
+      negotiations: 'bg-amber-50 text-amber-700 border-amber-300 font-semibold',
+      follow_ups: 'bg-sky-50 text-sky-700 border-sky-300 font-semibold',
+      clarifications: 'bg-cyan-50 text-cyan-700 border-cyan-300 font-semibold',
+      existing_leads: 'bg-blue-50 text-blue-700 border-blue-300 font-semibold',
+      purchase_orders: 'bg-teal-50 text-teal-700 border-teal-300 font-semibold',
+      invoices: 'bg-violet-50 text-violet-700 border-violet-300 font-semibold',
+      needs_review: 'bg-rose-50 text-rose-700 border-rose-300 font-semibold',
+      system_notification: 'bg-slate-100 text-slate-600 border-slate-300 font-medium',
+    };
+    const labels: Record<string, string> = {
+      new_leads: 'New Lead',
+      negotiations: 'Negotiation',
+      follow_ups: 'Follow-up',
+      clarifications: 'Clarification',
+      existing_leads: 'Existing Lead',
+      purchase_orders: 'Purchase Order',
+      invoices: 'Invoice',
+      needs_review: 'Needs Review',
+      system_notification: 'System Alert',
+    };
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs border ${styles[key] || 'bg-slate-100 text-slate-600 border-slate-200'} ${className}`}>
+        {labels[key] || rawVal}
+      </span>
+    );
+  }
   if (type === 'relevance') {
     const val = String(value);
     const styles: Record<string, string> = {
@@ -43,34 +100,7 @@ export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => 
     );
   }
 
-  if (type === 'pipeline') {
-    const val = String(value);
-    const styles: Record<string, string> = {
-      new_leads: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      negotiations: 'bg-amber-50 text-amber-700 border-amber-200',
-      follow_ups: 'bg-sky-50 text-sky-700 border-sky-200',
-      clarifications: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-      existing_leads: 'bg-blue-50 text-blue-700 border-blue-200',
-      purchase_orders: 'bg-teal-50 text-teal-700 border-teal-200',
-      invoices: 'bg-violet-50 text-violet-700 border-violet-200',
-      needs_review: 'bg-rose-50 text-rose-700 border-rose-200',
-    };
-    const labels: Record<string, string> = {
-      new_leads: 'New Lead',
-      negotiations: 'Negotiation',
-      follow_ups: 'Follow-up',
-      clarifications: 'Clarification',
-      existing_leads: 'Existing Lead',
-      purchase_orders: 'Purchase Order',
-      invoices: 'Invoice',
-      needs_review: 'Needs Review',
-    };
-    return (
-      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[val] || 'bg-slate-100 text-slate-600 border-slate-200'} ${className}`}>
-        {labels[val] || val.replace(/_/g, ' ')}
-      </span>
-    );
-  }
+
 
   if (type === 'relationship') {
     const val = value as Relationship;

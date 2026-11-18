@@ -253,7 +253,7 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
 
               {cls && (
                 <div className="flex items-center space-x-2">
-                  <Badge type="confidence" value={cls.confidence} />
+                  <Badge type="classification" value={cls.pipeline_category || cls.intent} />
                   <button
                     onClick={() => setShowCorrectionForm(!showCorrectionForm)}
                     className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"

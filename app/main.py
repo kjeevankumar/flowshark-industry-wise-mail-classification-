@@ -56,6 +56,24 @@ async def lifespan(app: FastAPI):
     except Exception as err:
         logger.warning("Startup cleanup check failed: %s", str(err))
 
+    # Automatically re-classify existing emails with updated accurate rules on startup
+    try:
+        from app.db.session import SessionLocal
+        from app.models.email_model import Email
+        from app.services.hybrid_classifier import HybridClassifier
+        with SessionLocal() as db_session:
+            classifier = HybridClassifier(db=db_session, settings=settings)
+            emails_to_reclassify = db_session.query(Email).all()
+            if emails_to_reclassify:
+                for em in emails_to_reclassify:
+                    try:
+                        classifier.classify_email(em, force_reclassify=True)
+                    except Exception:
+                        pass
+                logger.info("Startup re-classification completed for %d emails.", len(emails_to_reclassify))
+    except Exception as err:
+        logger.warning("Startup re-classification check failed: %s", str(err))
+
     if settings.is_configured:
         logger.info("Gmail account configured: %s", settings.masked_gmail_address)
     else:

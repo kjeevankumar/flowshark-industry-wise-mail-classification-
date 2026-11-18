@@ -124,10 +124,10 @@ class PipelineClassifier:
             )
 
         # Rule 7: New Leads
-        if intent == "new_enquiry" and relationship in ["new_contact", "unknown", None]:
+        if intent == "new_enquiry":
             return PipelineAssignmentResult(
                 pipeline_category="new_leads",
-                relationship="new_contact",
+                relationship="new_contact" if relationship in ["new_contact", "unknown", None] else relationship,
                 intent="new_enquiry",
                 lead_stage=lead_stage if lead_stage in ["new", "qualified"] else "new",
                 confidence=max(confidence, 0.88),

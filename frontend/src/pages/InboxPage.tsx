@@ -265,12 +265,8 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                 </th>
                 <th className="px-4 py-3">Sender</th>
                 <th className="px-4 py-3">Subject & Preview</th>
-                <th className="px-4 py-3">Relevance</th>
-                <th className="px-4 py-3">Relationship</th>
-                <th className="px-4 py-3">Intent</th>
-                <th className="px-4 py-3">Lead Stage</th>
+                <th className="px-4 py-3">Classification</th>
                 <th className="px-4 py-3">Industry</th>
-                <th className="px-4 py-3">Confidence</th>
                 <th className="px-4 py-3">Received</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
@@ -278,14 +274,14 @@ export const InboxPage: React.FC<InboxPageProps> = ({
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="p-8 text-center text-slate-400">
+                  <td colSpan={7} className="p-8 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
                     <span>Loading emails...</span>
                   </td>
                 </tr>
               ) : data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-12 text-center text-slate-500">
+                  <td colSpan={7} className="p-12 text-center text-slate-500">
                     <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-semibold text-slate-700">
                       {categoryFilter === 'system_notifications'
@@ -329,22 +325,11 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                         <p className="text-[11px] text-slate-400 truncate mt-0.5">{email.snippet}</p>
                       </td>
                       <td className="px-4 py-3">
-                        {c?.relevance_category ? (
-                          <Badge type="relevance" value={c.relevance_category} />
-                        ) : c ? (
-                          <Badge type="relevance" value={c.is_business_relevant ? 'business_conversation' : 'system_notification'} />
+                        {c ? (
+                          <Badge type="classification" value={c.pipeline_category || c.intent} />
                         ) : (
                           <span className="text-slate-400">Unclassified</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {c ? <Badge type="relationship" value={c.relationship} /> : <span className="text-slate-400">-</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {c ? <Badge type="intent" value={c.intent} /> : <span className="text-slate-400">-</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {c ? <Badge type="stage" value={c.lead_stage} /> : <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-4 py-3">
                         {c && (c.target_industry || c.sender_industry) ? (
@@ -357,9 +342,6 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                         ) : (
                           <span className="text-slate-400">-</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {c ? <Badge type="confidence" value={c.confidence} /> : <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs font-medium">
                         {formatReceivedDateTime(email.received_at)}

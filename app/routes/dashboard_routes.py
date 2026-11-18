@@ -79,34 +79,36 @@ def get_dashboard_summary(
 
     new_leads_count = biz_class_q.filter(
         (Classification.pipeline_category == "new_leads")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.relationship == "new_contact") & (Classification.intent == "new_enquiry"))
+        | (Classification.intent == "new_enquiry")
     ).count()
     negotiations_count = biz_class_q.filter(
         (Classification.pipeline_category == "negotiations")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "negotiation"))
+        | (Classification.intent == "negotiation")
     ).count()
     follow_ups_count = biz_class_q.filter(
         (Classification.pipeline_category == "follow_ups")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "follow_up"))
+        | (Classification.intent == "follow_up")
     ).count()
     clarifications_count = biz_class_q.filter(
         (Classification.pipeline_category == "clarifications")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "business_clarification"))
+        | (Classification.intent == "business_clarification")
     ).count()
     existing_leads_count = biz_class_q.filter(
         (Classification.pipeline_category == "existing_leads")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.relationship == "existing_lead") & (~Classification.intent.in_(["new_enquiry", "negotiation", "follow_up", "business_clarification", "purchase_order", "invoice"])))
+        | ((Classification.relationship == "existing_lead") & (~Classification.intent.in_(["new_enquiry", "negotiation", "follow_up", "business_clarification", "purchase_order", "invoice"])))
     ).count()
     purchase_orders_count = biz_class_q.filter(
         (Classification.pipeline_category == "purchase_orders")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "purchase_order"))
+        | (Classification.intent == "purchase_order")
     ).count()
     invoices_count = biz_class_q.filter(
         (Classification.pipeline_category == "invoices")
-        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "invoice"))
+        | (Classification.intent == "invoice")
     ).count()
     needs_review_count = biz_class_q.filter(
-        (Classification.pipeline_category == "needs_review") | (Classification.requires_human_review == True)
+        (Classification.pipeline_category == "needs_review")
+        | (Classification.intent == "other")
+        | (Classification.requires_human_review == True)
     ).count()
     human_corrected_count = db.query(ClassificationHistory).filter(ClassificationHistory.mailbox_id == mid).count()
 
