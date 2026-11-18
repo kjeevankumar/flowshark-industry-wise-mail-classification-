@@ -84,6 +84,10 @@ def test_delete_email_and_cleanup_endpoints():
         mb_id = mb.id if mb else 1
         account_email = mb.email_address if mb else "test@flowshark.local"
 
+        # Clean up any lingering test purge email from previous runs
+        db.query(Email).filter(Email.imap_uid == "test_purge_999").delete()
+        db.commit()
+
         test_email = Email(
             mailbox_id=mb_id,
             account_email=account_email,
@@ -98,19 +102,25 @@ def test_delete_email_and_cleanup_endpoints():
         db.commit()
         db.refresh(test_email)
 
-        test_cls = Classification(
-            mailbox_id=mb_id,
-            email_id=test_email.id,
-            relevance_category="account_security_notification",
-            is_business_relevant=False,
-            pipeline_category=None,
-            relationship="unknown",
-            intent="other",
-            lead_stage="unknown",
-            confidence=0.98,
-            classification_method="rule_based",
-        )
-        db.add(test_cls)
+        existing_cls = db.query(Classification).filter(Classification.email_id == test_email.id).first()
+        if existing_cls:
+            existing_cls.is_business_relevant = False
+            existing_cls.pipeline_category = None
+            existing_cls.relevance_category = "account_security_notification"
+        else:
+            test_cls = Classification(
+                mailbox_id=mb_id,
+                email_id=test_email.id,
+                relevance_category="account_security_notification",
+                is_business_relevant=False,
+                pipeline_category=None,
+                relationship="unknown",
+                intent="other",
+                lead_stage="unknown",
+                confidence=0.98,
+                classification_method="rule_based",
+            )
+            db.add(test_cls)
         db.commit()
         email_id = test_email.id
 

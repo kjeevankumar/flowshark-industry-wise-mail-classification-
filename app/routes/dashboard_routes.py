@@ -80,74 +80,48 @@ def get_dashboard_summary(
     total_synced = email_q.count()
     total_classified = class_q.count()
 
-    # Scoped Category Counts - strictly business relevant for lead pipelines
+    # Scoped Category Counts - strictly authoritative pipeline categories (with safe fallback for unmigrated legacy rows)
     biz_class_q = class_q.filter(Classification.is_business_relevant != False)  # noqa: E712
     non_business_count = class_q.filter(Classification.is_business_relevant == False).count()  # noqa: E712
 
     new_leads_count = biz_class_q.filter(
         (Classification.pipeline_category == "new_leads")
-        | (Classification.intent == "new_enquiry")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "new_enquiry"))
     ).count()
     negotiations_count = biz_class_q.filter(
         (Classification.pipeline_category == "negotiations")
-        | (Classification.intent == "negotiation")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "negotiation"))
     ).count()
     follow_ups_count = biz_class_q.filter(
         (Classification.pipeline_category == "follow_ups")
-        | (Classification.intent == "follow_up")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "follow_up"))
     ).count()
     clarifications_count = biz_class_q.filter(
         (Classification.pipeline_category == "clarifications")
-        | (Classification.intent == "business_clarification")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "business_clarification"))
     ).count()
     existing_leads_count = biz_class_q.filter(
         (Classification.pipeline_category == "existing_leads")
-        | (Classification.intent == "existing_lead")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "existing_lead"))
     ).count()
     purchase_orders_count = biz_class_q.filter(
         (Classification.pipeline_category == "purchase_orders")
-        | (Classification.intent == "purchase_order")
+        | ((Classification.pipeline_category.is_(None)) & (Classification.intent == "purchase_order"))
     ).count()
+
     # Commercial Subcategory Counts
-    invoice_requests_count = biz_class_q.filter(
-        (Classification.pipeline_category == "invoice_request")
-        | (Classification.intent == "invoice_request")
-        | (Classification.commercial_intent == "invoice_request")
-    ).count()
-    invoice_updates_count = biz_class_q.filter(
-        (Classification.pipeline_category == "invoice_update")
-        | (Classification.intent == "invoice_update")
-        | (Classification.commercial_intent == "invoice_update")
-    ).count()
-    legacy_invoices_count = biz_class_q.filter(
-        (Classification.pipeline_category == "invoices")
-        | (Classification.intent == "invoice")
-    ).count()
+    invoice_requests_count = biz_class_q.filter(Classification.pipeline_category == "invoice_request").count()
+    invoice_updates_count = biz_class_q.filter(Classification.pipeline_category == "invoice_update").count()
+    legacy_invoices_count = biz_class_q.filter(Classification.pipeline_category == "invoices").count()
     invoice_billing_count = invoice_requests_count + invoice_updates_count + legacy_invoices_count
 
-    payment_remittances_count = biz_class_q.filter(
-        (Classification.pipeline_category == "payment_remittance")
-        | (Classification.intent == "payment_remittance")
-        | (Classification.commercial_intent == "payment_remittance")
-    ).count()
-    payment_followups_count = biz_class_q.filter(
-        (Classification.pipeline_category == "payment_follow_up")
-        | (Classification.intent == "payment_follow_up")
-        | (Classification.commercial_intent == "payment_follow_up")
-    ).count()
-    payment_disputes_count = biz_class_q.filter(
-        (Classification.pipeline_category == "payment_dispute")
-        | (Classification.intent == "payment_dispute")
-        | (Classification.commercial_intent == "payment_dispute")
-    ).count()
+    payment_remittances_count = biz_class_q.filter(Classification.pipeline_category == "payment_remittance").count()
+    payment_followups_count = biz_class_q.filter(Classification.pipeline_category == "payment_follow_up").count()
+    payment_disputes_count = biz_class_q.filter(Classification.pipeline_category == "payment_dispute").count()
     payments_count = payment_remittances_count + payment_followups_count + payment_disputes_count
 
     invoices_count = invoice_billing_count
-    needs_review_count = biz_class_q.filter(
-        (Classification.pipeline_category == "needs_review")
-        | (Classification.intent.in_(["other", "needs_review"]))
-        | (Classification.requires_human_review == True)
-    ).count()
+    needs_review_count = biz_class_q.filter(Classification.pipeline_category == "needs_review").count()
     human_corrected_count = db.query(ClassificationHistory).filter(ClassificationHistory.mailbox_id == mid).count()
 
     # Recent 10 emails scoped strictly to active mailbox

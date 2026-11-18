@@ -85,6 +85,7 @@ export const api = {
     page?: number;
     size?: number;
     search?: string;
+    pipeline?: string;
     category?: string;
     is_business_relevant?: boolean;
     pipeline_category?: string;
@@ -96,7 +97,11 @@ export const api = {
     sender_industry?: string;
     target_industry?: string;
   }): Promise<PaginatedEmails> => {
-    const res = await apiClient.get<PaginatedEmails>('/api/emails', { params });
+    const finalParams = {
+      ...params,
+      pipeline: params.pipeline || params.category,
+    };
+    const res = await apiClient.get<PaginatedEmails>('/api/emails', { params: finalParams });
     return res.data;
   },
 

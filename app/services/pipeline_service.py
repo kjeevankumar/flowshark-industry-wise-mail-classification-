@@ -173,8 +173,8 @@ class PipelineClassifier:
             "addendum to our existing agreement", "addendum to our agreement",
             "addendum to the agreement", "additional hours needed", "additional hours",
             "scope expansion", "existing agreement", "existing contract", "existing engagement",
-            "existing account", "existing client", "project update & phase 2", "project update",
-            "sprint update", "status of our ongoing", "progress of our ongoing",
+            "existing account", "existing client", "project update & phase 2",
+            "status of our ongoing", "progress of our ongoing",
             "account review", "quarterly business review", "qbr", "current deployment", "current rollout"
         ]
         has_existing_lead_signals = any(
@@ -185,7 +185,7 @@ class PipelineClassifier:
         if any(phrase in combined_text for phrase in existing_lead_keywords):
             has_existing_lead_signals = True
 
-        if intent == "existing_lead" or has_existing_lead_signals:
+        if intent == "existing_lead" or (has_existing_lead_signals and intent not in ["follow_up", "business_clarification", "negotiation", "purchase_order", "invoice_request", "invoice_update", "payment_remittance", "payment_follow_up", "payment_dispute"]):
             return PipelineAssignmentResult(
                 pipeline_category="existing_leads",
                 relationship="existing_lead",

@@ -4,8 +4,9 @@ All queries and operations are strictly scoped to the active mailbox.
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import false as sql_false
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -102,6 +103,54 @@ def _get_sync_status_data(db: Session, settings: Settings) -> SyncStatusResponse
     )
 
 
+def normalize_pipeline_category(val: Optional[str]) -> Optional[Tuple[str, List[str], Optional[bool]]]:
+    """
+    Normalizes a pipeline filter parameter into a canonical category and the exact
+    list of pipeline_category values to match in the database.
+
+    Returns:
+        (canonical_name, [matching_db_categories], is_business_relevant)
+        or ("UNRECOGNIZED", [], None) if an unknown filter string was passed.
+    """
+    if not val or not isinstance(val, str) or not val.strip():
+        return None
+    raw = val.lower().strip().replace(" ", "_").replace("-", "_")
+
+    if raw in ("new_leads", "new_lead", "new_enquiry"):
+        return ("new_leads", ["new_leads"], True)
+    if raw in ("existing_leads", "existing_lead"):
+        return ("existing_leads", ["existing_leads"], True)
+    if raw in ("negotiations", "negotiation"):
+        return ("negotiations", ["negotiations"], True)
+    if raw in ("follow_ups", "follow_up", "followup", "followups"):
+        return ("follow_ups", ["follow_ups"], True)
+    if raw in ("clarifications", "clarification", "business_clarifications", "business_clarification"):
+        return ("clarifications", ["clarifications"], True)
+    if raw in ("purchase_orders", "purchase_order", "po"):
+        return ("purchase_orders", ["purchase_orders"], True)
+    if raw in ("invoice_request", "invoice_requests"):
+        return ("invoice_request", ["invoice_request"], True)
+    if raw in ("invoice_update", "invoice_updates"):
+        return ("invoice_update", ["invoice_update"], True)
+    if raw in ("payment_remittance", "payment_remittances", "remittance", "remittances", "remittance_advice"):
+        return ("payment_remittance", ["payment_remittance"], True)
+    if raw in ("payment_follow_up", "payment_follow_ups", "payment_followup", "payment_followups"):
+        return ("payment_follow_up", ["payment_follow_up"], True)
+    if raw in ("payment_dispute", "payment_disputes", "dispute", "disputes"):
+        return ("payment_dispute", ["payment_dispute"], True)
+    if raw in ("needs_review", "review"):
+        return ("needs_review", ["needs_review"], True)
+    if raw in ("system_notifications", "system_notification", "non_business", "automated_notifications", "automated_notification"):
+        return ("system_notifications", [], False)
+    # Composite commercial parent views
+    if raw in ("invoice_billing", "invoices", "invoice"):
+        return ("invoice_billing", ["invoice_request", "invoice_update", "invoices"], True)
+    if raw in ("payments", "payment"):
+        return ("payments", ["payment_remittance", "payment_follow_up", "payment_dispute", "payments"], True)
+
+    return ("UNRECOGNIZED", [], None)
+
+
 @router.get(
     "",
     response_model=PaginatedEmailsResponse,
@@ -112,6 +161,7 @@ def list_emails(
     page: int = Query(default=1, ge=1, description="Page number (starts at 1)"),
     size: int = Query(default=20, ge=1, le=100, description="Items per page"),
     search: Optional[str] = Query(None, description="Search term matching subject or sender"),
+    pipeline: Optional[str] = Query(None, description="Direct filter on pipeline category (e.g. purchase_order, invoice_request)"),
     category: Optional[str] = Query(
         None,
         description=(
@@ -147,14 +197,12 @@ def list_emails(
         query = query.filter(Email.account_email == settings.GMAIL_ADDRESS)
 
     search_val = search if isinstance(search, str) else None
-    category_val = category if isinstance(category, str) else None
     intent_val = intent if isinstance(intent, str) else None
     relationship_val = relationship if isinstance(relationship, str) else None
     lead_stage_val = lead_stage if isinstance(lead_stage, str) else None
     industry_val = industry if isinstance(industry, str) else None
     sender_ind_val = sender_industry if isinstance(sender_industry, str) else None
     target_ind_val = target_industry if isinstance(target_industry, str) else None
-    pipe_cat_val = pipeline_category if isinstance(pipeline_category, str) else None
     rel_cat_val = relevance_category if isinstance(relevance_category, str) else None
 
     # Search filter (scoped to active mailbox)
@@ -162,16 +210,14 @@ def list_emails(
         term = f"%{search_val.strip()}%"
         query = query.filter((Email.subject.ilike(term)) | (Email.sender.ilike(term)))
 
-    # Direct relevance / pipeline filters
+    # Direct relevance filters
     biz_rel_val = is_business_relevant if isinstance(is_business_relevant, bool) else None
     if biz_rel_val is not None:
         query = query.filter(Classification.is_business_relevant == biz_rel_val)
-    if pipe_cat_val:
-        query = query.filter(Classification.pipeline_category == pipe_cat_val)
     if rel_cat_val:
         query = query.filter(Classification.relevance_category == rel_cat_val)
 
-    # Direct filters
+    # Direct classification property filters
     if intent_val:
         query = query.filter(Classification.intent == intent_val)
     if relationship_val:
@@ -190,106 +236,43 @@ def list_emails(
     if target_ind_val and target_ind_val.strip():
         query = query.filter(Classification.target_industry.ilike(target_ind_val.strip()))
 
-    # Category aggregate filters (Strictly scoped lead pipelines with backward compatibility)
-    if category_val:
-        cat = category_val.lower().strip()
-        if cat == "new_leads":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "new_leads")
-                | (Classification.intent == "new_enquiry"),
-            )
-        elif cat == "negotiations":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "negotiations")
-                | (Classification.intent == "negotiation"),
-            )
-        elif cat == "follow_ups":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "follow_ups")
-                | (Classification.intent == "follow_up"),
-            )
-        elif cat in ("business_clarifications", "clarifications"):
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "clarifications")
-                | (Classification.intent == "business_clarification"),
-            )
-        elif cat == "existing_leads":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "existing_leads")
-                | (Classification.intent == "existing_lead"),
-            )
-        elif cat == "purchase_orders":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "purchase_orders")
-                | (Classification.intent == "purchase_order")
-                | (Classification.commercial_intent == "purchase_order"),
-            )
-        elif cat in ("invoices", "invoice_billing"):
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category.in_(["invoices", "invoice_billing", "invoice_request", "invoice_update"]))
-                | (Classification.intent.in_(["invoice", "invoice_request", "invoice_update"]))
-                | (Classification.commercial_intent.in_(["invoice_request", "invoice_update"])),
-            )
-        elif cat == "invoice_request":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "invoice_request")
-                | (Classification.intent == "invoice_request")
-                | (Classification.commercial_intent == "invoice_request"),
-            )
-        elif cat == "invoice_update":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "invoice_update")
-                | (Classification.intent == "invoice_update")
-                | (Classification.commercial_intent == "invoice_update"),
-            )
-        elif cat == "payments":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category.in_(["payments", "payment_remittance", "payment_follow_up", "payment_dispute"]))
-                | (Classification.intent.in_(["payment_remittance", "payment_follow_up", "payment_dispute"]))
-                | (Classification.commercial_intent.in_(["payment_remittance", "payment_follow_up", "payment_dispute"])),
-            )
-        elif cat == "payment_remittance":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "payment_remittance")
-                | (Classification.intent == "payment_remittance")
-                | (Classification.commercial_intent == "payment_remittance"),
-            )
-        elif cat == "payment_follow_up":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "payment_follow_up")
-                | (Classification.intent == "payment_follow_up")
-                | (Classification.commercial_intent == "payment_follow_up"),
-            )
-        elif cat == "payment_dispute":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (Classification.pipeline_category == "payment_dispute")
-                | (Classification.intent == "payment_dispute")
-                | (Classification.commercial_intent == "payment_dispute"),
-            )
-        elif cat == "needs_review":
-            query = query.filter(
-                Classification.is_business_relevant != False,  # noqa: E712
-                (
-                    (Classification.pipeline_category == "needs_review")
-                    | (Classification.intent.in_(["other", "needs_review"]))
-                    | (Classification.requires_human_review == True)  # noqa: E712
-                ),
-            )
-        elif cat in ("system_notifications", "non_business", "automated_notifications"):
+    # Authoritative Primary Pipeline Filter (Phase 2 & Phase 3)
+    # Consolidate 'pipeline', 'category', and 'pipeline_category' query parameters
+    pipe_val = pipeline if isinstance(pipeline, str) else None
+    pipe_cat_val = pipeline_category if isinstance(pipeline_category, str) else None
+    cat_val = category if isinstance(category, str) else None
+    effective_pipeline = pipe_val or pipe_cat_val or cat_val
+    pipe_norm = normalize_pipeline_category(effective_pipeline)
+
+    if pipe_norm is not None:
+        canonical, db_categories, is_biz = pipe_norm
+        if canonical == "UNRECOGNIZED":
+            # CRITICAL REQUIREMENT: Never return all emails when an invalid or unrecognized filter is provided!
+            query = query.filter(sql_false())
+        elif canonical == "system_notifications" or is_biz is False:
             query = query.filter(Classification.is_business_relevant == False)  # noqa: E712
+        else:
+            # Strict Authoritative Pipeline Isolation:
+            # An email appears in a pipeline ONLY when its authoritative Classification.pipeline_category matches.
+            # If an unmigrated legacy record has pipeline_category as None, fall back to matching its primary intent.
+            cat_filter = Classification.pipeline_category.in_(db_categories)
+            if canonical == "new_leads":
+                cat_filter = cat_filter | (Classification.pipeline_category.is_(None) & (Classification.intent == "new_enquiry"))
+            elif canonical == "negotiations":
+                cat_filter = cat_filter | (Classification.pipeline_category.is_(None) & (Classification.intent == "negotiation"))
+            elif canonical == "follow_ups":
+                cat_filter = cat_filter | (Classification.pipeline_category.is_(None) & (Classification.intent == "follow_up"))
+            elif canonical == "clarifications":
+                cat_filter = cat_filter | (Classification.pipeline_category.is_(None) & (Classification.intent == "business_clarification"))
+            elif canonical == "existing_leads":
+                cat_filter = cat_filter | (Classification.pipeline_category.is_(None) & (Classification.intent == "existing_lead"))
+            elif canonical == "purchase_orders":
+                cat_filter = cat_filter | (Classification.pipeline_category.is_(None) & (Classification.intent == "purchase_order"))
+
+            query = query.filter(
+                Classification.is_business_relevant != False,  # noqa: E712
+                cat_filter,
+            )
 
     page_num = page if isinstance(page, int) else 1
     size_num = size if isinstance(size, int) else 20

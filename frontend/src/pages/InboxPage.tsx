@@ -101,6 +101,7 @@ export const InboxPage: React.FC<InboxPageProps> = ({
       const res = await api.getEmails({
         page: pageNumber,
         size: 20,
+        pipeline: category,
         category: category,
         search: search && search.trim() ? search.trim() : undefined,
         industry: activeIndustry && activeIndustry.trim() ? activeIndustry.trim() : undefined,
