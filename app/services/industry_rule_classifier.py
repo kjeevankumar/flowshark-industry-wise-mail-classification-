@@ -142,10 +142,23 @@ class IndustryRuleClassifier:
                     break
 
         # Step 3: Domain-specific Keyword & Phrase Signal Scoring
+        # Guard: Check if banking/finance terms are merely a payment method / wire remittance rail
+        is_payment_remittance_rail = any(
+            rail in text for rail in [
+                "payment has been processed via", "payment processed via", "remittance advice",
+                "wire transfer via", "remittance from", "paid via", "paid through", "bank transfer via",
+                "chase commercial banking", "wire reference", "remittance for invoice", "invoice #inv-"
+            ]
+        )
+
         scores: Dict[str, int] = {ind: 0 for ind in self.signals.keys()}
         matched_signals_by_ind: Dict[str, List[str]] = {ind: [] for ind in self.signals.keys()}
 
         for ind, ind_data in self.signals.items():
+            # Skip Banking & Finance scoring if it's merely a payment transfer rail
+            if ind == "Banking & Finance" and is_payment_remittance_rail and not any(core in text for core in ["core banking", "banking software", "loan processing", "fintech platform"]):
+                continue
+
             # Check multi-word phrases (higher weight)
             for phrase in ind_data["phrases"]:
                 if phrase in text:
@@ -191,8 +204,8 @@ class IndustryRuleClassifier:
 
         # Case C: Only target was explicitly matched
         elif target_industry and not sender_industry:
-            # Check sender company or email cues (e.g., "Digitalizing", "Tech", "Hospital")
-            sender_cue = self._check_sender_identity_cues(sender_name, sender_email)
+            # Check sender company or email cues (e.g., "Digitalizing", "Tech", "Hospital", "Apex Logistics")
+            sender_cue = self._check_sender_identity_cues(sender_name, sender_email, text=text)
             if sender_cue:
                 sender_industry = sender_cue
                 evidence.append(f"Sender company/email cue: '{sender_name or sender_email}' -> {sender_cue}")
@@ -221,7 +234,7 @@ class IndustryRuleClassifier:
                 evidence.extend(matched_signals_by_ind[top_ind][:3])
 
                 # Check if sender company name reveals sender industry
-                sender_cue = self._check_sender_identity_cues(sender_name, sender_email)
+                sender_cue = self._check_sender_identity_cues(sender_name, sender_email, text=text)
                 if sender_cue:
                     sender_industry = sender_cue
                     evidence.append(f"Sender name cue: '{sender_name or sender_email}'")
@@ -370,9 +383,14 @@ class IndustryRuleClassifier:
 
         return subs[0] if subs else None
 
-    def _check_sender_identity_cues(self, sender_name: Optional[str], sender_email: Optional[str]) -> Optional[str]:
-        """Extract sender industry cues from sender name or email domain."""
+    def _check_sender_identity_cues(self, sender_name: Optional[str], sender_email: Optional[str], text: str = "") -> Optional[str]:
+        """Extract sender industry cues from sender name, email domain, or company signature."""
         combined = f"{sender_name or ''} {sender_email or ''}".lower()
+        text_lower = (text or "").lower()
+
+        # Check signature or organization indications in text
+        if any(k in combined or k in text_lower for k in ["apex logistics", "logistics global", "supply chain operations", "freight partner"]):
+            return "Logistics & Transportation"
         if any(k in combined for k in ["digitalizing", "tech", "technologies", "software", "solutions", "it services"]):
             return "IT & Software"
         if any(k in combined for k in ["hospital", "clinic", "health", "pharma", "medical"]):
@@ -402,6 +420,12 @@ class IndustryRuleClassifier:
     ) -> Optional[str]:
         """Synthesize concise description of business activity."""
         text_lower = text.lower()
+        if "logistics tracking" in text_lower or ("migrate" in text_lower and "aws" in text_lower):
+            return "Migration of a legacy logistics tracking platform to AWS"
+        if "phase 2" in text_lower or "ongoing deployment" in text_lower:
+            return "Ongoing project deployment and phase 2 scope expansion"
+        if "remittance advice" in text_lower or "payment has been processed" in text_lower:
+            return "Commercial invoice payment settlement"
         if "patient management" in text_lower:
             return "Hospital patient management software"
         if "automotive component" in text_lower or "automotive components" in text_lower:

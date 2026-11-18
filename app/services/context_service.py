@@ -23,8 +23,16 @@ from app.models.contact_model import Contact
 from app.models.conversation_model import Conversation
 from app.models.email_model import Email
 from app.models.lead_model import Lead, LeadActivityHistory
+from app.models.organization_model import Organization
+from app.models.tenant_model import Tenant
 
 logger = logging.getLogger("gmail_fastapi.context_service")
+
+FREEMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "hotmail.com",
+    "outlook.com", "live.com", "msn.com", "icloud.com", "me.com", "mac.com",
+    "aol.com", "zoho.com", "proton.me", "protonmail.com", "mail.com"
+}
 
 
 def normalize_sender_address(raw_sender: Optional[str]) -> Tuple[str, str]:
@@ -89,17 +97,62 @@ class ContextService:
     def __init__(self, db: Session):
         self.db = db
 
+    def get_or_create_organization(
+        self,
+        name: str,
+        domain: Optional[str] = None,
+        tenant_id: Optional[int] = None,
+        industry: str = "Unknown",
+        sub_industry: Optional[str] = None,
+        business_activity: Optional[str] = None,
+    ) -> Optional[Organization]:
+        """Find or create an external client Organization."""
+        if not name or name.strip().lower() in ["unknown", "none", ""]:
+            return None
+        clean_name = name.strip()
+        query = self.db.query(Organization).filter(Organization.name.ilike(clean_name))
+        if tenant_id is not None:
+            query = query.filter(Organization.tenant_id == tenant_id)
+        org = query.first()
+
+        if not org and domain:
+            query_d = self.db.query(Organization).filter(Organization.domain == domain.strip().lower())
+            if tenant_id is not None:
+                query_d = query_d.filter(Organization.tenant_id == tenant_id)
+            org = query_d.first()
+
+        if not org:
+            org = Organization(
+                tenant_id=tenant_id,
+                name=clean_name,
+                domain=domain.strip().lower() if domain else None,
+                industry=industry or "Unknown",
+                sub_industry=sub_industry,
+                business_activity=business_activity,
+            )
+            self.db.add(org)
+            self.db.flush()
+        else:
+            if industry and industry != "Unknown" and getattr(org, "industry", "Unknown") == "Unknown":
+                org.industry = industry
+            if sub_industry and not getattr(org, "sub_industry", None):
+                org.sub_industry = sub_industry
+            if domain and not org.domain:
+                org.domain = domain.strip().lower()
+        return org
+
     def get_or_create_contact(
         self,
         raw_sender: str,
         mailbox_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
         initial_relationship: str = "unknown",
         initial_stage: str = "unknown",
         business_context: Optional[str] = None,
         industry: Optional[str] = None,
         sub_industry: Optional[str] = None,
     ) -> Contact:
-        """Find or create a Contact record for a normalized email address."""
+        """Find or create a Contact record for a normalized email address with Organization association."""
         clean_email, display_name = normalize_sender_address(raw_sender)
         if not clean_email:
             clean_email = (raw_sender or "unknown").strip().lower()
@@ -110,27 +163,42 @@ class ContextService:
             query = query.filter(Contact.mailbox_id == mailbox_id)
         contact = query.first()
 
+        # Extract domain & organization
+        email_domain = clean_email.split("@")[1] if "@" in clean_email else ""
+        org = None
+        if email_domain and email_domain not in FREEMAIL_DOMAINS:
+            org_name = display_name if display_name and not display_name.lower().endswith(email_domain) else email_domain.split(".")[0].title()
+            org = self.get_or_create_organization(
+                name=org_name,
+                domain=email_domain,
+                tenant_id=tenant_id,
+                industry=industry or "Unknown",
+                sub_industry=sub_industry,
+            )
+
         if not contact:
-            # Infer company name if display name has company indicators or multiple words
-            company_name = None
-            if display_name and not display_name.lower().endswith("@gmail.com"):
-                company_name = display_name
+            company_name = org.name if org else (display_name if display_name and not display_name.lower().endswith("@gmail.com") else None)
 
             contact = Contact(
+                tenant_id=tenant_id,
                 mailbox_id=mailbox_id,
+                organization_id=org.id if org else None,
                 email_address=clean_email,
                 name=display_name,
                 company_name=company_name,
                 relationship_type=initial_relationship,
                 current_lead_stage=initial_stage,
                 business_context=business_context,
-                industry=industry or "Unknown",
-                sub_industry=sub_industry,
+                industry=industry or (org.industry if org else "Unknown"),
+                sub_industry=sub_industry or (org.sub_industry if org else None),
             )
             self.db.add(contact)
             self.db.flush()
         else:
-            # Update display name or company name if better info is provided
+            if tenant_id and not contact.tenant_id:
+                contact.tenant_id = tenant_id
+            if org and not contact.organization_id:
+                contact.organization_id = org.id
             if display_name and not contact.name:
                 contact.name = display_name
             if business_context and not contact.business_context:
@@ -149,67 +217,87 @@ class ContextService:
         initial_stage: str = "new",
         business_context: Optional[str] = None,
         mailbox_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
+        organization_id: Optional[int] = None,
         target_industry: Optional[str] = None,
         sub_industry: Optional[str] = None,
+        requested_solution_domain: Optional[str] = None,
+        priority: str = "warm",
+        thread_id: Optional[str] = None,
+        is_reply_or_continuation: bool = False,
+        opportunity_id: Optional[int] = None,
     ) -> Lead:
-        """Find active lead or create a new lead opportunity for a contact."""
-        # Query active lead (not closed as lost/won or most recent active)
-        active_lead = (
-            self.db.query(Lead)
-            .filter(
-                Lead.contact_id == contact.id,
-                Lead.status.notin_(["won", "lost"]),
+        """Find active lead or create a new distinct lead opportunity for a contact."""
+        # 1. Explicit opportunity ID
+        if opportunity_id:
+            opp = self.db.query(Lead).filter(Lead.id == opportunity_id).first()
+            if opp:
+                return opp
+
+        # 2. If it is a verified thread reply/continuation, associate with existing thread lead
+        if is_reply_or_continuation and thread_id:
+            thread_lead = (
+                self.db.query(Lead)
+                .join(Email, Email.lead_id == Lead.id)
+                .filter(
+                    Email.gmail_thread_id == thread_id,
+                    Email.mailbox_id == (mailbox_id or contact.mailbox_id),
+                )
+                .order_by(Lead.updated_at.desc())
+                .first()
             )
-            .order_by(Lead.updated_at.desc())
-            .first()
-        )
+            if thread_lead:
+                if business_context and not thread_lead.business_context:
+                    thread_lead.business_context = business_context
+                return thread_lead
 
-        if active_lead:
-            # If lead already exists, enrich business context if needed
-            if business_context and not active_lead.business_context:
-                active_lead.business_context = business_context
-            if target_industry and target_industry != "Unknown" and getattr(active_lead, "target_industry", "Unknown") == "Unknown":
-                active_lead.target_industry = target_industry
-            if sub_industry and not getattr(active_lead, "sub_industry", None):
-                active_lead.sub_industry = sub_industry
-            return active_lead
+        # 3. If explicit continuation of active contact lead
+        if is_reply_or_continuation:
+            active_lead = (
+                self.db.query(Lead)
+                .filter(
+                    Lead.contact_id == contact.id,
+                    Lead.status.notin_(["won", "lost"]),
+                )
+                .order_by(Lead.updated_at.desc())
+                .first()
+            )
+            if active_lead:
+                if business_context and not active_lead.business_context:
+                    active_lead.business_context = business_context
+                return active_lead
 
-        # Otherwise check if there is any lead at all
-        any_lead = (
-            self.db.query(Lead)
-            .filter(Lead.contact_id == contact.id)
-            .order_by(Lead.updated_at.desc())
-            .first()
-        )
-        if any_lead and any_lead.status in ["won", "lost"] and initial_stage in ["won", "lost", "unknown"]:
-            return any_lead
-
-        # Create new lead opportunity
-        clean_title = title.strip() or f"Enquiry from {contact.name or contact.email_address}"
-        # Strip prefixes like Re: or Fwd:
+        # 4. Otherwise, create a NEW distinct Business Opportunity
+        clean_title = (title or "").strip()
         clean_title = re.sub(r"^(re|fwd|fw):\s*", "", clean_title, flags=re.IGNORECASE).strip()
+        if not clean_title or clean_title.lower() in ["(no subject)", "no subject"]:
+            company_or_contact = contact.company_name or contact.name or contact.email_address
+            clean_title = f"{requested_solution_domain or 'Opportunity'} – {company_or_contact}"
 
         lead = Lead(
+            tenant_id=tenant_id or contact.tenant_id,
             mailbox_id=mailbox_id or contact.mailbox_id,
+            organization_id=organization_id or contact.organization_id,
             contact_id=contact.id,
             title=clean_title,
             status=initial_stage if initial_stage != "unknown" else "new",
+            priority=priority,
             business_context=business_context,
             source="email",
             target_industry=target_industry or "Unknown",
             sub_industry=sub_industry,
+            requested_solution_domain=requested_solution_domain or "Unknown",
         )
         self.db.add(lead)
         self.db.flush()
 
-        # Record activity
         activity = LeadActivityHistory(
             mailbox_id=mailbox_id or contact.mailbox_id,
             lead_id=lead.id,
             contact_id=contact.id,
             activity_type="lead_created",
             to_stage=lead.status,
-            description=f"Created lead '{clean_title}' from email interaction.",
+            description=f"Created new opportunity '{clean_title}'.",
         )
         self.db.add(activity)
 
@@ -227,22 +315,28 @@ class ContextService:
                 contact_q = contact_q.filter(Contact.mailbox_id == email_record.mailbox_id)
             contact = contact_q.first()
 
-        # 2. Fetch associated Lead if exists
+        # 2. Fetch associated Lead ONLY if explicitly linked or part of verified thread
         lead = None
-        if contact:
-            # Find active lead or most recent lead
-            lead = (
+        if email_record.lead_id:
+            lead = self.db.query(Lead).filter(Lead.id == email_record.lead_id).first()
+        elif email_record.gmail_thread_id:
+            thread_lead = (
                 self.db.query(Lead)
-                .filter(Lead.contact_id == contact.id)
+                .join(Email, Email.lead_id == Lead.id)
+                .filter(
+                    Email.gmail_thread_id == email_record.gmail_thread_id,
+                    Email.id != email_record.id,
+                )
                 .order_by(Lead.updated_at.desc())
                 .first()
             )
+            if thread_lead:
+                lead = thread_lead
 
         # 3. Retrieve prior emails using multi-signal strategy:
-        # a) Gmail thread ID
-        # b) RFC In-Reply-To / References
-        # c) Normalized sender address history
-        prior_emails_dict: Dict[int, Email] = {}
+        # Distinguish verified thread emails from general sender history
+        thread_prior_emails: Dict[int, Email] = {}
+        sender_prior_emails: Dict[int, Email] = {}
 
         # a) By Gmail thread ID
         if email_record.gmail_thread_id:
@@ -253,7 +347,7 @@ class ContextService:
             if email_record.mailbox_id is not None:
                 th_q = th_q.filter(Email.mailbox_id == email_record.mailbox_id)
             for em in th_q.all():
-                prior_emails_dict[em.id] = em
+                thread_prior_emails[em.id] = em
 
         # b) By RFC In-Reply-To and References
         rfc_ids: Set[str] = set()
@@ -270,7 +364,7 @@ class ContextService:
             if email_record.mailbox_id is not None:
                 rfc_q = rfc_q.filter(Email.mailbox_id == email_record.mailbox_id)
             for em in rfc_q.all():
-                prior_emails_dict[em.id] = em
+                thread_prior_emails[em.id] = em
 
         # c) By normalized sender address history
         if clean_email:
@@ -280,12 +374,16 @@ class ContextService:
             )
             if email_record.mailbox_id is not None:
                 sender_q = sender_q.filter(Email.mailbox_id == email_record.mailbox_id)
-            # Fetch up to 10 previous emails from same sender
-            for em in sender_q.order_by(Email.received_at.asc(), Email.id.asc()).limit(10).all():
-                prior_emails_dict[em.id] = em
+            for em in sender_q.order_by(Email.received_at.asc(), Email.id.asc()).limit(5).all():
+                sender_prior_emails[em.id] = em
 
-        # Sort all prior emails chronologically (filtering out those received after current email if timestamps exist)
-        candidate_list = list(prior_emails_dict.values())
+        # Isolate conversation: if exact thread emails exist, use them. Otherwise background history.
+        if thread_prior_emails:
+            candidate_list = list(thread_prior_emails.values())
+        else:
+            candidate_list = list(sender_prior_emails.values())
+
+        # Filter out those received after current email if timestamps exist
         if email_record.received_at:
             candidate_list = [
                 em for em in candidate_list

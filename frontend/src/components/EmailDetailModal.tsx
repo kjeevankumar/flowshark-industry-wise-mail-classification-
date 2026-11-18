@@ -267,8 +267,53 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
 
             {cls ? (
               <div className="space-y-4">
+                {/* Executive Narrative Explanation */}
+                {cls.executive_explanation && (
+                  <div className="bg-gradient-to-r from-indigo-50/90 to-blue-50/90 rounded-xl p-4 border border-indigo-200 shadow-2xs space-y-2">
+                    <div className="flex items-center space-x-1.5 text-indigo-950 font-bold text-xs uppercase tracking-wider">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Executive Intelligence & Business Opportunity Summary</span>
+                    </div>
+                    <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                      {cls.executive_explanation}
+                    </p>
+                  </div>
+                )}
+
+                {/* Priority, Qualification & Commercial Intent Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Priority</span>
+                    <Badge type="priority" value={cls.priority_level || 'warm'} />
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Urgency</span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      cls.action_urgency === 'high' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                      cls.action_urgency === 'medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                      'bg-slate-50 text-slate-600 border border-slate-200'
+                    }`}>
+                      {cls.action_urgency ? `${cls.action_urgency.toUpperCase()} Urgency` : 'Medium'}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Business Potential</span>
+                    <span className="text-xs font-semibold text-slate-700 capitalize">
+                      {cls.business_potential || 'Medium'}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Commercial Intent</span>
+                    {cls.commercial_intent && cls.commercial_intent !== 'none' ? (
+                      <Badge type="commercial_intent" value={cls.commercial_intent} />
+                    ) : (
+                      <span className="text-xs text-slate-400">Standard</span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Business Relevance & Pipeline */}
-                <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="grid grid-cols-2 gap-3 pt-1">
                   <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Business Relevance</span>
                     {cls.relevance_category ? (
@@ -455,12 +500,12 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
 
               <div className="grid grid-cols-3 gap-3 pt-1">
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Sender Industry</span>
-                  <Badge type="industry" value={cls.sender_industry || 'Unknown'} />
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Customer Org Industry</span>
+                  <Badge type="industry" value={cls.customer_org_industry || cls.sender_industry || 'Unknown'} />
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Target Industry</span>
-                  <Badge type="industry" value={cls.target_industry || 'Unknown'} />
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Requested Solution Domain</span>
+                  <Badge type="industry" value={cls.requested_solution_domain || cls.target_industry || 'Unknown'} />
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Sub-Industry</span>
@@ -497,6 +542,64 @@ export const EmailDetailModal: React.FC<EmailDetailModalProps> = ({
                     ))}
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Actionable Next Tasks (Interactive checklist) */}
+          {((email.tasks && email.tasks.length > 0) || cls?.suggested_next_action) && (
+            <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-emerald-900 font-bold text-xs uppercase tracking-wider">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>Actionable Follow-up Tasks</span>
+                </div>
+                {email.tasks && email.tasks.length > 0 && (
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    {email.tasks.filter((t) => t.status === 'completed').length}/{email.tasks.length} Done
+                  </span>
+                )}
+              </div>
+
+              {email.tasks && email.tasks.length > 0 ? (
+                <div className="space-y-2">
+                  {email.tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      onClick={async () => {
+                        const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+                        await api.updateTask(task.id, { status: newStatus });
+                        onUpdated();
+                      }}
+                      className={`flex items-start space-x-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                        task.status === 'completed'
+                          ? 'bg-slate-50 border-slate-200 text-slate-400 line-through'
+                          : 'bg-emerald-50/40 border-emerald-200 text-slate-800 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={task.status === 'completed'}
+                        readOnly
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <div className="flex-1 text-xs">
+                        <span className="font-semibold">{task.title}</span>
+                        {task.assigned_to && (
+                          <span className="ml-2 text-[10px] text-slate-500 font-normal">
+                            Assigned: {task.assigned_to}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                cls?.suggested_next_action && (
+                  <div className="text-xs bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 text-emerald-900 font-medium">
+                    {cls.suggested_next_action}
+                  </div>
+                )
               )}
             </div>
           )}

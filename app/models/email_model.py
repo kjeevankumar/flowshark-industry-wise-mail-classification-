@@ -23,7 +23,9 @@ class Email(Base):
     __tablename__ = "emails"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     mailbox_id = Column(Integer, ForeignKey("mailboxes.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     contact_id = Column(Integer, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
     lead_id = Column(Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
     account_email = Column(String(255), nullable=False, index=True)
@@ -35,6 +37,8 @@ class Email(Base):
     references_header = Column(Text, nullable=True)
     sender = Column(String(500), nullable=False)
     recipient = Column(String(500), nullable=True)
+    cc = Column(String(500), nullable=True)
+    bcc = Column(String(500), nullable=True)
     subject = Column(String(1000), nullable=False, default="(No Subject)")
     snippet = Column(String(1000), nullable=True)
     body_text = Column(Text, nullable=True)
@@ -57,9 +61,12 @@ class Email(Base):
     )
 
     # Relationships
+    tenant = relationship("Tenant", back_populates="emails")
+    organization = relationship("Organization", back_populates="emails")
     mailbox = relationship("Mailbox", back_populates="emails")
     contact = relationship("Contact", back_populates="emails")
     lead = relationship("Lead", back_populates="emails")
+    tasks = relationship("Task", back_populates="email", cascade="all, delete-orphan")
     classification = relationship(
         "Classification",
         back_populates="email",

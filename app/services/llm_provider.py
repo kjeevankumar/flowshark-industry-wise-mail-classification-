@@ -119,9 +119,17 @@ class LLMClassificationOutput(BaseModel):
         default="Unknown",
         description="Primary industry of the sender organization from centralized taxonomy",
     )
+    customer_org_industry: str = Field(
+        default="Unknown",
+        description="Primary industry of customer organization (e.g. Logistics & Transportation)",
+    )
     target_industry: str = Field(
         default="Unknown",
         description="Primary industry of the target project, client, or solution from centralized taxonomy",
+    )
+    requested_solution_domain: str = Field(
+        default="Unknown",
+        description="Domain of requested service or solution (e.g. IT & Software / AWS Migration)",
     )
     sub_industry: Optional[str] = Field(
         default=None,
@@ -148,6 +156,42 @@ class LLMClassificationOutput(BaseModel):
     industry_requires_review: bool = Field(
         default=False,
         description="Flag indicating if industry classification needs human review",
+    )
+
+    # Priority & Qualification Scoring Dimensions (Section 8 requirement)
+    commercial_intent: str = Field(
+        default="none",
+        description="Detailed commercial intent: invoice_issued, payment_remittance, payment_confirmation, payment_follow_up, payment_dispute, purchase_order, quotation, commercial_negotiation, none",
+    )
+    priority_score: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Calibrated multi-dimensional priority score",
+    )
+    priority_level: str = Field(
+        default="warm",
+        description="Priority bucket: hot, warm, low",
+    )
+    action_urgency: str = Field(
+        default="medium",
+        description="Action urgency: high, medium, low",
+    )
+    business_potential: str = Field(
+        default="medium",
+        description="Business potential: high, medium, low, unknown",
+    )
+    information_completeness: str = Field(
+        default="partial",
+        description="Information completeness: complete, partial, missing",
+    )
+    executive_explanation: Optional[str] = Field(
+        default=None,
+        description="Synthesized executive narrative explanation for business intelligence",
+    )
+    review_reasons: List[str] = Field(
+        default_factory=list,
+        description="Specific reasons requiring human review if applicable",
     )
 
     @field_validator("confidence")
@@ -304,29 +348,51 @@ class FallbackLLMProvider(BaseLLMProvider):
 
         # If not business relevant, short-circuit and exclude from lead pipelines
         if not rel_res.is_business_relevant:
+            from app.services.explanation_service import generate_executive_narrative
+            exec_summary = generate_executive_narrative(
+                sender=sender_email or "Unknown",
+                subject=subject,
+                cleaned_body=preprocessed.cleaned_body,
+                pipeline_category=None,
+                intent="other",
+                relationship="unknown",
+                customer_org_industry="Not Applicable",
+                requested_solution_domain="Not Applicable",
+                is_business_relevant=False,
+            )
             return LLMClassificationOutput(
                 relevance_category=rel_res.relevance_category,
                 is_business_relevant=False,
                 pipeline_category=None,
                 relationship="unknown",
                 intent="other",
+                commercial_intent="none",
                 lead_stage="unknown",
                 confidence=rel_res.confidence,
                 classification_reason=rel_res.reason,
+                executive_explanation=exec_summary,
                 key_signals=rel_res.evidence,
                 supporting_evidence=rel_res.evidence,
                 context_used=None,
                 suggested_next_action="Archive or ignore non-business notification.",
                 requires_human_review=rel_res.needs_review,
+                review_reasons=["Flagged as non-business alert or automated system notification."] if rel_res.needs_review else [],
                 classification_method="rule_based",
                 sender_industry="Not Applicable",
+                customer_org_industry="Not Applicable",
                 target_industry="Not Applicable",
+                requested_solution_domain="Not Applicable",
                 sub_industry=None,
                 business_activity=None,
                 industry_confidence=rel_res.confidence,
                 industry_reason="Non-business notification; industry classification not applicable.",
                 industry_evidence=[],
                 industry_requires_review=False,
+                priority_score=0.1,
+                priority_level="low",
+                action_urgency="low",
+                business_potential="unknown",
+                information_completeness="missing",
             )
 
         # Step 2: Context & Rule-based signal detection for business-relevant email
@@ -374,6 +440,67 @@ class FallbackLLMProvider(BaseLLMProvider):
             body=preprocessed.cleaned_body,
         )
 
+        # Step 4: Fine-Grained Commercial Intent Resolution
+        body_lower = preprocessed.cleaned_body.lower()
+        if pipe_res.pipeline_category == "invoices" or pipe_res.intent == "invoice":
+            if any(term in body_lower for term in ["remittance", "payment has been processed", "wire transfer processed", "advice", "payment received", "payment confirmed", "funds transferred"]):
+                commercial_intent = "payment_remittance"
+            elif any(term in body_lower for term in ["overdue", "past due", "friendly reminder", "pending payment", "unpaid invoice"]):
+                commercial_intent = "payment_follow_up"
+            elif any(term in body_lower for term in ["dispute", "incorrect charge", "wrong amount", "billing error"]):
+                commercial_intent = "payment_dispute"
+            else:
+                commercial_intent = "invoice_issued"
+        elif pipe_res.pipeline_category == "purchase_orders" or pipe_res.intent == "purchase_order":
+            commercial_intent = "purchase_order"
+        elif pipe_res.pipeline_category == "negotiations" or pipe_res.intent == "negotiation":
+            commercial_intent = "commercial_negotiation"
+        elif pipe_res.pipeline_category == "new_leads" or pipe_res.intent == "new_enquiry":
+            commercial_intent = "quotation"
+        elif pipe_res.pipeline_category == "follow_ups":
+            commercial_intent = "follow_up"
+        elif pipe_res.pipeline_category == "clarifications":
+            commercial_intent = "business_clarification"
+        elif pipe_res.pipeline_category == "existing_leads":
+            commercial_intent = "commercial_negotiation" if any(t in body_lower for t in ["scope", "addendum", "phase 2", "rate"]) else "none"
+        else:
+            commercial_intent = "none"
+
+        # Step 5: Multi-dimensional Priority & Qualification Scoring
+        from app.services.priority_service import PriorityScoringService
+        priority_engine = PriorityScoringService()
+        p_res = priority_engine.evaluate(
+            subject=subject,
+            cleaned_body=preprocessed.cleaned_body,
+            pipeline_category=pipe_res.pipeline_category,
+            intent=pipe_res.intent,
+            relationship=pipe_res.relationship,
+            is_business_relevant=True,
+        )
+
+        # Step 6: Executive Narrative Explanation
+        from app.services.explanation_service import generate_executive_narrative
+        exec_narrative = generate_executive_narrative(
+            sender=sender_email or "Unknown",
+            subject=subject,
+            cleaned_body=preprocessed.cleaned_body,
+            pipeline_category=pipe_res.pipeline_category,
+            intent=pipe_res.intent,
+            relationship=pipe_res.relationship,
+            customer_org_industry=ind_res.sender_industry,
+            requested_solution_domain=ind_res.target_industry,
+            is_business_relevant=True,
+        )
+
+        # Step 7: Review Reasons List
+        review_reasons = []
+        if pipe_res.needs_review:
+            review_reasons.append("Pipeline classifier flagged uncertainty or ambiguous intent.")
+        if pipe_res.confidence < 0.85:
+            review_reasons.append(f"Confidence score {int(pipe_res.confidence * 100)}% is below 85% auto-approval threshold.")
+        if ind_res.requires_review:
+            review_reasons.append("Industry classification requires verification against customer domain.")
+
         # Determine context-aware suggested next action
         if pipe_res.intent == "follow_up":
             if "progress" in subject.lower() or "progress" in preprocessed.cleaned_body.lower() or "website" in subject.lower():
@@ -408,19 +535,126 @@ class FallbackLLMProvider(BaseLLMProvider):
             lead_stage=pipe_res.lead_stage,  # type: ignore
             confidence=pipe_res.confidence,
             classification_reason=pipe_res.reason,
+            executive_explanation=exec_narrative,
             key_signals=rule_res.key_signals,
             context_used=rule_res.context_used or None,
             suggested_next_action=suggested_action,
             requires_human_review=pipe_res.needs_review,
+            review_reasons=review_reasons,
             classification_method="rule_based",
             sender_industry=ind_res.sender_industry,
+            customer_org_industry=ind_res.sender_industry,
             target_industry=ind_res.target_industry,
+            requested_solution_domain=ind_res.target_industry,
             sub_industry=ind_res.sub_industry,
             business_activity=ind_res.business_activity,
             industry_confidence=ind_res.confidence,
             industry_reason=ind_res.reason,
             industry_evidence=ind_res.evidence,
             industry_requires_review=ind_res.requires_review,
+            commercial_intent=commercial_intent,
+            priority_score=p_res.priority_score,
+            priority_level=p_res.priority_level,
+            action_urgency=p_res.action_urgency,
+            business_potential=p_res.business_potential,
+            information_completeness=p_res.information_completeness,
+        )
+
+
+def _enrich_llm_output_data(
+    data: Dict[str, Any],
+    subject: str,
+    cleaned_body: str,
+    sender_email: str,
+    is_business_relevant: bool,
+) -> None:
+    """Enrich LLM output data with deterministic priority, commercial intent, and executive narrative."""
+    sender_ind = data.get("sender_industry", "Unknown")
+    target_ind = data.get("target_industry", "Unknown")
+    data["customer_org_industry"] = data.get("customer_org_industry") or sender_ind
+    data["requested_solution_domain"] = data.get("requested_solution_domain") or target_ind
+
+    if not is_business_relevant:
+        data["commercial_intent"] = "none"
+        data["priority_score"] = 0.1
+        data["priority_level"] = "low"
+        data["action_urgency"] = "low"
+        data["business_potential"] = "unknown"
+        data["information_completeness"] = "missing"
+        data["customer_org_industry"] = "Not Applicable"
+        data["requested_solution_domain"] = "Not Applicable"
+        from app.services.explanation_service import generate_executive_narrative
+        data["executive_explanation"] = generate_executive_narrative(
+            sender=sender_email or "Unknown",
+            subject=subject,
+            cleaned_body=cleaned_body,
+            pipeline_category=None,
+            intent="other",
+            relationship="unknown",
+            customer_org_industry="Not Applicable",
+            requested_solution_domain="Not Applicable",
+            is_business_relevant=False,
+        )
+        return
+
+    # Commercial intent detection
+    if not data.get("commercial_intent") or data.get("commercial_intent") == "none":
+        body_lower = cleaned_body.lower()
+        pipe_cat = data.get("pipeline_category")
+        intent = data.get("intent")
+        if pipe_cat == "invoices" or intent == "invoice":
+            if any(term in body_lower for term in ["remittance", "payment has been processed", "wire transfer processed", "advice", "payment received", "payment confirmed", "funds transferred"]):
+                data["commercial_intent"] = "payment_remittance"
+            elif any(term in body_lower for term in ["overdue", "past due", "friendly reminder", "pending payment", "unpaid invoice"]):
+                data["commercial_intent"] = "payment_follow_up"
+            elif any(term in body_lower for term in ["dispute", "incorrect charge", "wrong amount", "billing error"]):
+                data["commercial_intent"] = "payment_dispute"
+            else:
+                data["commercial_intent"] = "invoice_issued"
+        elif pipe_cat == "purchase_orders" or intent == "purchase_order":
+            data["commercial_intent"] = "purchase_order"
+        elif pipe_cat == "negotiations" or intent == "negotiation":
+            data["commercial_intent"] = "commercial_negotiation"
+        elif pipe_cat == "new_leads" or intent == "new_enquiry":
+            data["commercial_intent"] = "quotation"
+        elif pipe_cat == "follow_ups":
+            data["commercial_intent"] = "follow_up"
+        elif pipe_cat == "clarifications":
+            data["commercial_intent"] = "business_clarification"
+        elif pipe_cat == "existing_leads":
+            data["commercial_intent"] = "commercial_negotiation" if any(t in body_lower for t in ["scope", "addendum", "phase 2", "rate"]) else "none"
+        else:
+            data["commercial_intent"] = "none"
+
+    if not data.get("priority_score") or data.get("priority_score") == 0.5:
+        from app.services.priority_service import PriorityScoringService
+        priority_engine = PriorityScoringService()
+        p_res = priority_engine.evaluate(
+            subject=subject,
+            cleaned_body=cleaned_body,
+            pipeline_category=data.get("pipeline_category"),
+            intent=data.get("intent"),
+            relationship=data.get("relationship"),
+            is_business_relevant=True,
+        )
+        data["priority_score"] = p_res.priority_score
+        data["priority_level"] = p_res.priority_level
+        data["action_urgency"] = p_res.action_urgency
+        data["business_potential"] = p_res.business_potential
+        data["information_completeness"] = p_res.information_completeness
+
+    if not data.get("executive_explanation"):
+        from app.services.explanation_service import generate_executive_narrative
+        data["executive_explanation"] = generate_executive_narrative(
+            sender=sender_email or "Unknown",
+            subject=subject,
+            cleaned_body=cleaned_body,
+            pipeline_category=data.get("pipeline_category"),
+            intent=data.get("intent"),
+            relationship=data.get("relationship") or "unknown",
+            customer_org_industry=data["customer_org_industry"],
+            requested_solution_domain=data["requested_solution_domain"],
+            is_business_relevant=True,
         )
 
 
@@ -526,6 +760,7 @@ Respond ONLY with the JSON object."""
                 data["confidence"] = rel_res.confidence
                 data["classification_reason"] = rel_res.reason
                 data["supporting_evidence"] = rel_res.evidence
+                _enrich_llm_output_data(data, subject, preprocessed.cleaned_body, sender_email, is_business_relevant=False)
             else:
                 data.setdefault("relevance_category", rel_res.relevance_category)
                 data.setdefault("is_business_relevant", True)
@@ -549,6 +784,7 @@ Respond ONLY with the JSON object."""
                 data["intent"] = pipe_res.intent
                 data["lead_stage"] = pipe_res.lead_stage
                 data["supporting_evidence"] = rel_res.evidence + data.get("key_signals", [])
+                _enrich_llm_output_data(data, subject, preprocessed.cleaned_body, sender_email, is_business_relevant=True)
 
             return LLMClassificationOutput(**data)
 
@@ -633,6 +869,7 @@ class OpenAIProvider(BaseLLMProvider):
                 data["confidence"] = rel_res.confidence
                 data["classification_reason"] = rel_res.reason
                 data["supporting_evidence"] = rel_res.evidence
+                _enrich_llm_output_data(data, subject, preprocessed.cleaned_body, sender_email, is_business_relevant=False)
             else:
                 data.setdefault("relevance_category", rel_res.relevance_category)
                 data.setdefault("is_business_relevant", True)
@@ -656,6 +893,7 @@ class OpenAIProvider(BaseLLMProvider):
                 data["intent"] = pipe_res.intent
                 data["lead_stage"] = pipe_res.lead_stage
                 data["supporting_evidence"] = rel_res.evidence + data.get("key_signals", [])
+                _enrich_llm_output_data(data, subject, preprocessed.cleaned_body, sender_email, is_business_relevant=True)
 
             return LLMClassificationOutput(**data)
         except Exception as err:

@@ -53,6 +53,8 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """Create all registered database tables if they do not already exist."""
     # Import all models so metadata knows about them
+    import app.models.tenant_model  # noqa: F401
+    import app.models.organization_model  # noqa: F401
     import app.models.mailbox_model  # noqa: F401
     import app.models.email_model  # noqa: F401
     import app.models.conversation_model  # noqa: F401
@@ -60,6 +62,7 @@ def init_db() -> None:
     import app.models.sync_model  # noqa: F401
     import app.models.contact_model  # noqa: F401
     import app.models.lead_model  # noqa: F401
+    import app.models.task_model  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
@@ -70,6 +73,20 @@ def init_db() -> None:
             from app.core.security import encrypt_credential
 
             with engine.connect() as conn:
+                # 0. Bootstrap default tenant if table exists and empty
+                tenant_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(tenants)")).fetchall()]
+                default_tenant_id = 1
+                if tenant_cols:
+                    t_row = conn.execute(text("SELECT id FROM tenants WHERE slug = 'default' LIMIT 1")).fetchone()
+                    if not t_row:
+                        t_cursor = conn.execute(
+                            text("INSERT INTO tenants (name, slug, created_at, updated_at) VALUES ('FlowShark Default', 'default', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
+                        )
+                        default_tenant_id = t_cursor.lastrowid
+                        conn.commit()
+                    else:
+                        default_tenant_id = t_row[0]
+
                 # 1. sync_state columns
                 sync_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(sync_state)")).fetchall()]
                 if sync_cols:
@@ -80,17 +97,33 @@ def init_db() -> None:
                     if "worker_status" not in sync_cols:
                         conn.execute(text("ALTER TABLE sync_state ADD COLUMN worker_status VARCHAR(50) DEFAULT 'stopped'"))
 
-                # 2. emails columns
+                # 2. mailboxes columns
+                mb_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(mailboxes)")).fetchall()]
+                if mb_cols:
+                    if "tenant_id" not in mb_cols:
+                        conn.execute(text("ALTER TABLE mailboxes ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)"))
+                        conn.execute(text("UPDATE mailboxes SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": default_tenant_id})
+
+                # 3. emails columns
                 email_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(emails)")).fetchall()]
                 if email_cols:
+                    if "tenant_id" not in email_cols:
+                        conn.execute(text("ALTER TABLE emails ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)"))
+                        conn.execute(text("UPDATE emails SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": default_tenant_id})
                     if "mailbox_id" not in email_cols:
                         conn.execute(text("ALTER TABLE emails ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+                    if "organization_id" not in email_cols:
+                        conn.execute(text("ALTER TABLE emails ADD COLUMN organization_id INTEGER REFERENCES organizations(id)"))
                     if "contact_id" not in email_cols:
                         conn.execute(text("ALTER TABLE emails ADD COLUMN contact_id INTEGER REFERENCES contacts(id)"))
                     if "lead_id" not in email_cols:
                         conn.execute(text("ALTER TABLE emails ADD COLUMN lead_id INTEGER REFERENCES leads(id)"))
+                    if "cc" not in email_cols:
+                        conn.execute(text("ALTER TABLE emails ADD COLUMN cc VARCHAR(500)"))
+                    if "bcc" not in email_cols:
+                        conn.execute(text("ALTER TABLE emails ADD COLUMN bcc VARCHAR(500)"))
 
-                # 3. conversations columns
+                # 4. conversations columns
                 conv_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(conversations)")).fetchall()]
                 if conv_cols:
                     if "mailbox_id" not in conv_cols:
@@ -100,11 +133,16 @@ def init_db() -> None:
                     if "lead_id" not in conv_cols:
                         conn.execute(text("ALTER TABLE conversations ADD COLUMN lead_id INTEGER REFERENCES leads(id)"))
 
-                # 4. classifications columns
+                # 5. classifications columns
                 class_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(classifications)")).fetchall()]
                 if class_cols:
+                    if "tenant_id" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)"))
+                        conn.execute(text("UPDATE classifications SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": default_tenant_id})
                     if "mailbox_id" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN mailbox_id INTEGER REFERENCES mailboxes(id)"))
+                    if "organization_id" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN organization_id INTEGER REFERENCES organizations(id)"))
                     if "contact_id" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN contact_id INTEGER REFERENCES contacts(id)"))
                     if "lead_id" not in class_cols:
@@ -113,8 +151,12 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN context_used TEXT"))
                     if "sender_industry" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN sender_industry VARCHAR(100) DEFAULT 'Unknown'"))
+                    if "customer_org_industry" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN customer_org_industry VARCHAR(100) DEFAULT 'Unknown'"))
                     if "target_industry" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN target_industry VARCHAR(100) DEFAULT 'Unknown'"))
+                    if "requested_solution_domain" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN requested_solution_domain VARCHAR(100) DEFAULT 'Unknown'"))
                     if "sub_industry" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN sub_industry VARCHAR(100)"))
                     if "business_activity" not in class_cols:
@@ -133,26 +175,58 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN is_business_relevant BOOLEAN DEFAULT 1"))
                     if "pipeline_category" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN pipeline_category VARCHAR(50)"))
+                    if "commercial_intent" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN commercial_intent VARCHAR(50) DEFAULT 'none'"))
                     if "supporting_evidence" not in class_cols:
                         conn.execute(text("ALTER TABLE classifications ADD COLUMN supporting_evidence JSON"))
+                    if "executive_explanation" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN executive_explanation TEXT"))
+                    if "priority_score" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN priority_score FLOAT DEFAULT 0.5"))
+                    if "priority_level" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN priority_level VARCHAR(50) DEFAULT 'warm'"))
+                    if "action_urgency" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN action_urgency VARCHAR(50) DEFAULT 'medium'"))
+                    if "business_potential" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN business_potential VARCHAR(50) DEFAULT 'medium'"))
+                    if "information_completeness" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN information_completeness VARCHAR(50) DEFAULT 'partial'"))
+                    if "review_reasons" not in class_cols:
+                        conn.execute(text("ALTER TABLE classifications ADD COLUMN review_reasons JSON"))
 
-                # 4b. contacts columns
+                # 6. contacts columns
                 contact_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(contacts)")).fetchall()]
                 if contact_cols:
+                    if "tenant_id" not in contact_cols:
+                        conn.execute(text("ALTER TABLE contacts ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)"))
+                        conn.execute(text("UPDATE contacts SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": default_tenant_id})
+                    if "organization_id" not in contact_cols:
+                        conn.execute(text("ALTER TABLE contacts ADD COLUMN organization_id INTEGER REFERENCES organizations(id)"))
                     if "industry" not in contact_cols:
                         conn.execute(text("ALTER TABLE contacts ADD COLUMN industry VARCHAR(100) DEFAULT 'Unknown'"))
                     if "sub_industry" not in contact_cols:
                         conn.execute(text("ALTER TABLE contacts ADD COLUMN sub_industry VARCHAR(100)"))
 
-                # 4c. leads columns
+                # 7. leads columns
                 lead_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(leads)")).fetchall()]
                 if lead_cols:
+                    if "tenant_id" not in lead_cols:
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN tenant_id INTEGER REFERENCES tenants(id)"))
+                        conn.execute(text("UPDATE leads SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": default_tenant_id})
+                    if "organization_id" not in lead_cols:
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN organization_id INTEGER REFERENCES organizations(id)"))
                     if "target_industry" not in lead_cols:
                         conn.execute(text("ALTER TABLE leads ADD COLUMN target_industry VARCHAR(100) DEFAULT 'Unknown'"))
                     if "sub_industry" not in lead_cols:
                         conn.execute(text("ALTER TABLE leads ADD COLUMN sub_industry VARCHAR(100)"))
+                    if "requested_solution_domain" not in lead_cols:
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN requested_solution_domain VARCHAR(100) DEFAULT 'Unknown'"))
+                    if "priority" not in lead_cols:
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN priority VARCHAR(50) DEFAULT 'warm'"))
+                    if "assigned_to" not in lead_cols:
+                        conn.execute(text("ALTER TABLE leads ADD COLUMN assigned_to VARCHAR(255)"))
 
-                # 5. classification_history columns
+                # 8. classification_history columns
                 hist_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(classification_history)")).fetchall()]
                 if hist_cols:
                     if "mailbox_id" not in hist_cols:
@@ -162,7 +236,7 @@ def init_db() -> None:
 
                 conn.commit()
 
-                # 6. Bootstrap default active mailbox from settings if available and mailboxes table is empty
+                # 9. Bootstrap default active mailbox from settings if available and mailboxes table is empty
                 if settings.GMAIL_ADDRESS:
                     account_addr = settings.GMAIL_ADDRESS.strip().lower()
                     existing_mb = conn.execute(
@@ -175,10 +249,11 @@ def init_db() -> None:
                         enc_pwd = encrypt_credential(settings.clean_app_password or "")
                         cursor = conn.execute(
                             text(
-                                "INSERT INTO mailboxes (email_address, encrypted_app_password, is_active, imap_host, imap_port, smtp_host, smtp_port, created_at, updated_at) "
-                                "VALUES (:email, :pwd, 1, :ihost, :iport, :shost, :sport, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                                "INSERT INTO mailboxes (tenant_id, email_address, encrypted_app_password, is_active, imap_host, imap_port, smtp_host, smtp_port, created_at, updated_at) "
+                                "VALUES (:tid, :email, :pwd, 1, :ihost, :iport, :shost, :sport, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                             ),
                             {
+                                "tid": default_tenant_id,
                                 "email": account_addr,
                                 "pwd": enc_pwd,
                                 "ihost": settings.IMAP_HOST,
@@ -199,16 +274,37 @@ def init_db() -> None:
                         conn.execute(text("UPDATE classifications SET mailbox_id = :mid WHERE mailbox_id IS NULL"), {"mid": active_id})
                         conn.execute(text("UPDATE sync_state SET mailbox_id = :mid WHERE mailbox_id IS NULL"), {"mid": active_id})
                         conn.commit()
-        except Exception:
+        except Exception as e:
             pass
     elif "postgresql" in db_url or "postgres" in db_url:
         try:
             from sqlalchemy import text
             with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS relevance_category VARCHAR(50) DEFAULT 'business_enquiry'"))
-                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS is_business_relevant BOOLEAN DEFAULT TRUE"))
-                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS pipeline_category VARCHAR(50)"))
-                conn.execute(text("ALTER TABLE classifications ADD COLUMN IF NOT EXISTS supporting_evidence JSON"))
+                for col_stmt in [
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS relevance_category VARCHAR(50) DEFAULT 'business_enquiry'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS is_business_relevant BOOLEAN DEFAULT TRUE",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS pipeline_category VARCHAR(50)",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS commercial_intent VARCHAR(50) DEFAULT 'none'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS supporting_evidence JSON",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS executive_explanation TEXT",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS priority_score FLOAT DEFAULT 0.5",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS priority_level VARCHAR(50) DEFAULT 'warm'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS action_urgency VARCHAR(50) DEFAULT 'medium'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS business_potential VARCHAR(50) DEFAULT 'medium'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS information_completeness VARCHAR(50) DEFAULT 'partial'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS customer_org_industry VARCHAR(100) DEFAULT 'Unknown'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS requested_solution_domain VARCHAR(100) DEFAULT 'Unknown'",
+                    "ALTER TABLE classifications ADD COLUMN IF NOT EXISTS review_reasons JSON",
+                    "ALTER TABLE emails ADD COLUMN IF NOT EXISTS cc VARCHAR(500)",
+                    "ALTER TABLE emails ADD COLUMN IF NOT EXISTS bcc VARCHAR(500)",
+                    "ALTER TABLE leads ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'warm'",
+                    "ALTER TABLE leads ADD COLUMN IF NOT EXISTS requested_solution_domain VARCHAR(100) DEFAULT 'Unknown'",
+                    "ALTER TABLE leads ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(255)",
+                ]:
+                    try:
+                        conn.execute(text(col_stmt))
+                    except Exception:
+                        pass
                 conn.commit()
         except Exception:
             pass

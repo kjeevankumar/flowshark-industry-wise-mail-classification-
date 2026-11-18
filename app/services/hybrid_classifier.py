@@ -87,7 +87,26 @@ class HybridClassifier:
         if not rel_res.is_business_relevant and not has_ongoing_lead_context:
             email_record.contact_id = None
             email_record.lead_id = None
+            email_record.organization_id = None
+            tenant_id = email_record.tenant_id or 1
+            email_record.tenant_id = tenant_id
+
+            from app.services.explanation_service import generate_executive_narrative
+            exec_narrative = generate_executive_narrative(
+                sender=email_record.sender or "Unknown",
+                subject=email_record.subject,
+                cleaned_body=preprocessed.cleaned_body,
+                pipeline_category=None,
+                intent="other",
+                relationship="unknown",
+                customer_org_industry="Not Applicable",
+                requested_solution_domain="Not Applicable",
+                is_business_relevant=False,
+            )
+
             if existing_class:
+                existing_class.tenant_id = tenant_id
+                existing_class.organization_id = None
                 existing_class.contact_id = None
                 existing_class.lead_id = None
                 existing_class.relevance_category = rel_res.relevance_category
@@ -95,28 +114,40 @@ class HybridClassifier:
                 existing_class.pipeline_category = None
                 existing_class.relationship = "unknown"
                 existing_class.intent = "other"
+                existing_class.commercial_intent = "none"
                 existing_class.lead_stage = "unknown"
                 existing_class.confidence = rel_res.confidence
                 existing_class.classification_reason = rel_res.reason
+                existing_class.executive_explanation = exec_narrative
                 existing_class.key_signals = rel_res.evidence
                 existing_class.supporting_evidence = rel_res.evidence
                 existing_class.context_used = "Non-business notification evaluation"
                 existing_class.suggested_next_action = "Archive or ignore non-business notification."
                 existing_class.sender_industry = "Not Applicable"
+                existing_class.customer_org_industry = "Not Applicable"
                 existing_class.target_industry = "Not Applicable"
+                existing_class.requested_solution_domain = "Not Applicable"
                 existing_class.sub_industry = None
                 existing_class.business_activity = None
                 existing_class.industry_confidence = rel_res.confidence
                 existing_class.industry_reason = "Non-business notification; industry classification not applicable."
                 existing_class.industry_evidence = []
                 existing_class.industry_requires_review = False
+                existing_class.priority_score = 0.1
+                existing_class.priority_level = "low"
+                existing_class.action_urgency = "low"
+                existing_class.business_potential = "unknown"
+                existing_class.information_completeness = "missing"
                 existing_class.classification_method = "rule_based"
                 existing_class.requires_human_review = rel_res.needs_review
+                existing_class.review_reasons = ["Flagged as automated notification."] if rel_res.needs_review else []
                 self.db.commit()
                 return existing_class
             else:
                 new_cls = Classification(
+                    tenant_id=tenant_id,
                     mailbox_id=email_record.mailbox_id,
+                    organization_id=None,
                     email_id=email_record.id,
                     contact_id=None,
                     lead_id=None,
@@ -125,23 +156,33 @@ class HybridClassifier:
                     pipeline_category=None,
                     relationship="unknown",
                     intent="other",
+                    commercial_intent="none",
                     lead_stage="unknown",
                     confidence=rel_res.confidence,
                     classification_reason=rel_res.reason,
+                    executive_explanation=exec_narrative,
                     key_signals=rel_res.evidence,
                     supporting_evidence=rel_res.evidence,
                     context_used="Non-business notification evaluation",
                     suggested_next_action="Archive or ignore non-business notification.",
                     sender_industry="Not Applicable",
+                    customer_org_industry="Not Applicable",
                     target_industry="Not Applicable",
+                    requested_solution_domain="Not Applicable",
                     sub_industry=None,
                     business_activity=None,
                     industry_confidence=rel_res.confidence,
                     industry_reason="Non-business notification; industry classification not applicable.",
                     industry_evidence=[],
                     industry_requires_review=False,
+                    priority_score=0.1,
+                    priority_level="low",
+                    action_urgency="low",
+                    business_potential="unknown",
+                    information_completeness="missing",
                     classification_method="rule_based",
                     requires_human_review=rel_res.needs_review,
+                    review_reasons=["Flagged as automated notification."] if rel_res.needs_review else [],
                     model_provider="fallback",
                     model_name="relevance_rule_engine",
                 )
@@ -286,86 +327,7 @@ class HybridClassifier:
             industry_requires_review = False
             industry_reason = f"Inherited verified industry ({final_sender_industry}) from ongoing business relationship."
 
-        # 7. Sender Memory: Get or Update Contact Entity
-        contact = self.context_service.get_or_create_contact(
-            raw_sender=email_record.sender,
-            mailbox_id=email_record.mailbox_id,
-            initial_relationship=final_relationship,
-            initial_stage=final_lead_stage,
-            business_context=context.lead_business_context or preprocessed.cleaned_body[:200],
-            industry=final_sender_industry if final_sender_industry != "Unknown" and industry_confidence >= 0.80 else None,
-            sub_industry=final_sub_industry if final_sender_industry != "Unknown" and industry_confidence >= 0.80 else None,
-        )
-
-        # Update contact state
-        if final_relationship != "unknown":
-            contact.relationship_type = final_relationship
-        if final_lead_stage != "unknown":
-            contact.current_lead_stage = final_lead_stage
-        if email_record.received_at:
-            contact.last_interaction_at = to_utc_naive(email_record.received_at)
-        if final_sender_industry != "Unknown" and industry_confidence >= 0.80:
-            if not getattr(contact, "industry", None) or contact.industry == "Unknown":
-                contact.industry = final_sender_industry
-                contact.sub_industry = final_sub_industry
-
-        email_record.contact_id = contact.id
-
-        # 8. Lead Lifecycle Management: Get, Update, or Create Lead Entity
-        lead = None
-        if final_relationship in ["new_contact", "existing_lead"]:
-            # If active lead exists, associate with it
-            if context.lead_id:
-                lead = self.db.query(Lead).filter(Lead.id == context.lead_id).first()
-            if not lead:
-                lead = (
-                    self.db.query(Lead)
-                    .filter(Lead.contact_id == contact.id)
-                    .order_by(Lead.updated_at.desc())
-                    .first()
-                )
-
-            # Only create a new lead if no active lead exists and the intent warrants a lead
-            if not lead and final_intent in ["new_enquiry", "negotiation", "business_clarification", "follow_up"]:
-                lead = self.context_service.get_or_create_lead_for_contact(
-                    contact=contact,
-                    title=email_record.subject,
-                    initial_stage=final_lead_stage,
-                    business_context=preprocessed.cleaned_body[:300],
-                    mailbox_id=email_record.mailbox_id,
-                    target_industry=final_target_industry if final_target_industry != "Unknown" and industry_confidence >= 0.80 else None,
-                    sub_industry=final_sub_industry if final_target_industry != "Unknown" and industry_confidence >= 0.80 else None,
-                )
-
-            # Update existing lead lifecycle if stage changed with sufficient evidence
-            if lead:
-                if contact.relationship_type != "existing_customer":
-                    contact.relationship_type = "existing_lead"
-                old_stage = lead.status
-                if final_lead_stage != "unknown" and final_lead_stage != old_stage:
-                    lead.status = final_lead_stage
-                    lead.updated_at = datetime.now(timezone.utc)
-                    # Record lifecycle activity
-                    activity = LeadActivityHistory(
-                        mailbox_id=email_record.mailbox_id,
-                        lead_id=lead.id,
-                        contact_id=contact.id,
-                        email_id=email_record.id,
-                        activity_type="stage_transition",
-                        from_stage=old_stage,
-                        to_stage=final_lead_stage,
-                        description=f"Stage transitioned from '{old_stage}' to '{final_lead_stage}' via email '{email_record.subject}'.",
-                    )
-                    self.db.add(activity)
-
-                if final_target_industry != "Unknown" and industry_confidence >= 0.80:
-                    if not getattr(lead, "target_industry", None) or lead.target_industry == "Unknown":
-                        lead.target_industry = final_target_industry
-                        lead.sub_industry = final_sub_industry
-
-                email_record.lead_id = lead.id
-
-        # 9. Lead Pipeline Category Determination
+        # 6c. Lead Pipeline Category Determination
         from app.services.pipeline_service import PipelineClassifier
         pipeline_engine = PipelineClassifier()
         pipe_res = pipeline_engine.assign_pipeline(
@@ -389,6 +351,153 @@ class HybridClassifier:
         final_lead_stage = pipe_res.lead_stage or final_lead_stage
         if pipe_res.needs_review or final_pipeline_category == "needs_review":
             requires_review = True
+
+        # 7. Sender Memory & Organization Resolution: Get or Update Contact and Organization
+        tenant_id = email_record.tenant_id or 1
+        email_record.tenant_id = tenant_id
+
+        # Extract domain from sender
+        sender_clean = normalize_sender_address(email_record.sender)
+        sender_domain = sender_clean.split("@")[-1].lower() if "@" in sender_clean else ""
+
+        # Extract organization name if available
+        org_name = None
+        org_match = re.search(r"(?:at|from|with|regards,\s*(?:[A-Za-z\s]+)\s+)([A-Z][A-Za-z0-9\s&]+(?:Global|Corp|Inc|LLC|Solutions|Logistics|Capital|Bank|Partners|Agency|Technologies))", f"{email_record.subject}\n{preprocessed.cleaned_body}")
+        if org_match:
+            org_name = org_match.group(1).strip()
+        elif sender_domain and sender_domain not in ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com"]:
+            org_name = sender_domain.split(".")[0].replace("-", " ").title()
+
+        organization = None
+        if sender_domain or org_name:
+            organization = self.context_service.get_or_create_organization(
+                domain=sender_domain if sender_domain not in ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com"] else (f"{org_name.lower().replace(' ', '')}.com" if org_name else ""),
+                name=org_name or (sender_domain.split(".")[0].title() if sender_domain else "Unknown Company"),
+                tenant_id=tenant_id,
+                industry=final_sender_industry if final_sender_industry != "Unknown" else None,
+            )
+            if organization:
+                email_record.organization_id = organization.id
+
+        contact = self.context_service.get_or_create_contact(
+            raw_sender=email_record.sender,
+            mailbox_id=email_record.mailbox_id,
+            initial_relationship=final_relationship,
+            initial_stage=final_lead_stage,
+            business_context=context.lead_business_context or preprocessed.cleaned_body[:200],
+            industry=final_sender_industry if final_sender_industry != "Unknown" and industry_confidence >= 0.80 else None,
+            sub_industry=final_sub_industry if final_sender_industry != "Unknown" and industry_confidence >= 0.80 else None,
+        )
+
+        contact.tenant_id = tenant_id
+        if organization:
+            contact.organization_id = organization.id
+
+        # Update contact state
+        if final_relationship != "unknown":
+            contact.relationship_type = final_relationship
+        if final_lead_stage != "unknown":
+            contact.current_lead_stage = final_lead_stage
+        if email_record.received_at:
+            contact.last_interaction_at = to_utc_naive(email_record.received_at)
+        if final_sender_industry != "Unknown" and industry_confidence >= 0.80:
+            if not getattr(contact, "industry", None) or contact.industry == "Unknown":
+                contact.industry = final_sender_industry
+                contact.sub_industry = final_sub_industry
+
+        email_record.contact_id = contact.id
+
+        # 8. Lead Lifecycle Management: Strict Opportunity Separation
+        # Do NOT blindly attach new inquiries or remittances to the contact's previous lead!
+        lead = None
+        # Check if email is already linked (for idempotent reclassification)
+        if email_record.lead_id:
+            lead = self.db.query(Lead).filter(Lead.id == email_record.lead_id).first()
+        # Otherwise attach to existing lead if this email is an explicit reply or continuation within that thread
+        elif context.lead_id and (context.is_same_sender_continuation or context.is_reply):
+            lead = self.db.query(Lead).filter(Lead.id == context.lead_id).first()
+
+        # Determine if this message warrants a new opportunity / lead
+        # NEVER create a new opportunity for existing customers (maintain customer account)
+        is_opportunity_intent = (
+            final_relationship in ["new_contact", "existing_lead"]
+            and (final_intent in ["new_enquiry", "negotiation"] or final_pipeline_category in ["new_leads", "negotiations"])
+        )
+        is_standalone_remittance_or_invoice = final_intent == "invoice" or final_pipeline_category == "invoices"
+
+        if not lead and is_opportunity_intent and not is_standalone_remittance_or_invoice:
+            # Generate synthesized professional title for (No Subject) or vague subjects
+            lead_title = (email_record.subject or "").strip()
+            if not lead_title or lead_title.lower() in ["(no subject)", "no subject", "none", "enquiry", "hi"]:
+                company_label = organization.name if organization else (contact.name or "Client")
+                lead_title = f"{final_target_industry if final_target_industry != 'Unknown' else 'Business Opportunity'} – {company_label}"
+
+            lead = self.context_service.get_or_create_lead_for_contact(
+                contact=contact,
+                title=lead_title,
+                initial_stage=final_lead_stage if final_lead_stage in ["new", "qualified", "proposal_sent", "negotiation"] else "new",
+                business_context=preprocessed.cleaned_body[:300],
+                mailbox_id=email_record.mailbox_id,
+                target_industry=final_target_industry if final_target_industry != "Unknown" and industry_confidence >= 0.80 else None,
+                sub_industry=final_sub_industry if final_target_industry != "Unknown" and industry_confidence >= 0.80 else None,
+                is_reply_or_continuation=False,
+            )
+            if lead:
+                lead.tenant_id = tenant_id
+                lead.organization_id = organization.id if organization else None
+                lead.requested_solution_domain = final_target_industry
+                lead.priority = output.priority_level or "warm"
+
+        # Update existing lead lifecycle ONLY if stage progressed with verified evidence
+        if lead:
+            email_record.lead_id = lead.id
+            if contact.relationship_type != "existing_customer":
+                contact.relationship_type = "existing_lead"
+
+            # Rules for lifecycle updates on existing opportunity:
+            # Follow-ups and clarifications NEVER reset or mutate stage
+            # Remittances NEVER change lead status to WON
+            if final_pipeline_category in ["follow_ups", "clarifications"]:
+                pass  # Stage is preserved
+            elif final_intent == "purchase_order" or final_pipeline_category == "purchase_orders":
+                if lead.status != "won":
+                    old_stage = lead.status
+                    lead.status = "won"
+                    lead.updated_at = datetime.now(timezone.utc)
+                    activity = LeadActivityHistory(
+                        mailbox_id=email_record.mailbox_id,
+                        lead_id=lead.id,
+                        contact_id=contact.id,
+                        email_id=email_record.id,
+                        activity_type="stage_transition",
+                        from_stage=old_stage,
+                        to_stage="won",
+                        description=f"Stage transitioned from '{old_stage}' to 'won' via PO '{email_record.subject}'.",
+                    )
+                    self.db.add(activity)
+            elif final_intent == "negotiation" and lead.status in ["new", "qualified", "proposal_sent"]:
+                old_stage = lead.status
+                lead.status = "negotiation"
+                lead.updated_at = datetime.now(timezone.utc)
+                activity = LeadActivityHistory(
+                    mailbox_id=email_record.mailbox_id,
+                    lead_id=lead.id,
+                    contact_id=contact.id,
+                    email_id=email_record.id,
+                    activity_type="stage_transition",
+                    from_stage=old_stage,
+                    to_stage="negotiation",
+                    description=f"Stage transitioned from '{old_stage}' to 'negotiation' via email '{email_record.subject}'.",
+                )
+                self.db.add(activity)
+
+            if final_target_industry != "Unknown" and industry_confidence >= 0.80:
+                if not getattr(lead, "target_industry", None) or lead.target_industry == "Unknown":
+                    lead.target_industry = final_target_industry
+                    lead.sub_industry = final_sub_industry
+                    lead.requested_solution_domain = final_target_industry
+        else:
+            email_record.lead_id = None
 
         # 10. Persistence and Audit Trail in Classification & ClassificationHistory
         existing_class = (
@@ -446,6 +555,8 @@ class HybridClassifier:
                 )
                 self.db.add(history_entry)
 
+            existing_class.tenant_id = tenant_id
+            existing_class.organization_id = organization.id if organization else None
             existing_class.relevance_category = output.relevance_category
             existing_class.is_business_relevant = output.is_business_relevant
             existing_class.pipeline_category = final_pipeline_category
@@ -455,16 +566,27 @@ class HybridClassifier:
             existing_class.lead_id = email_record.lead_id
             existing_class.relationship = final_relationship
             existing_class.intent = final_intent
+            existing_class.commercial_intent = output.commercial_intent
             existing_class.lead_stage = final_lead_stage
             existing_class.confidence = confidence
             existing_class.classification_reason = output.classification_reason
+            existing_class.executive_explanation = output.executive_explanation
             existing_class.key_signals = output.key_signals
             existing_class.context_used = context_used
             existing_class.suggested_next_action = output.suggested_next_action
 
+            # Priority & Qualification fields
+            existing_class.priority_score = output.priority_score
+            existing_class.priority_level = output.priority_level
+            existing_class.action_urgency = output.action_urgency
+            existing_class.business_potential = output.business_potential
+            existing_class.information_completeness = output.information_completeness
+
             # Industry fields
             existing_class.sender_industry = final_sender_industry
+            existing_class.customer_org_industry = final_sender_industry
             existing_class.target_industry = final_target_industry
+            existing_class.requested_solution_domain = final_target_industry
             existing_class.sub_industry = final_sub_industry
             existing_class.business_activity = final_business_activity
             existing_class.industry_confidence = industry_confidence
@@ -474,12 +596,15 @@ class HybridClassifier:
 
             existing_class.classification_method = output.classification_method
             existing_class.requires_human_review = requires_review
+            existing_class.review_reasons = output.review_reasons
             existing_class.model_provider = self.settings.LLM_PROVIDER if self.settings.is_llm_configured else "fallback"
             existing_class.model_name = self.settings.LLM_MODEL
             classification_record = existing_class
         else:
             classification_record = Classification(
+                tenant_id=tenant_id,
                 mailbox_id=email_record.mailbox_id,
+                organization_id=organization.id if organization else None,
                 email_id=email_record.id,
                 contact_id=contact.id,
                 lead_id=email_record.lead_id,
@@ -489,14 +614,23 @@ class HybridClassifier:
                 supporting_evidence=output.supporting_evidence or output.key_signals,
                 relationship=final_relationship,
                 intent=final_intent,
+                commercial_intent=output.commercial_intent,
                 lead_stage=final_lead_stage,
                 confidence=confidence,
                 classification_reason=output.classification_reason,
+                executive_explanation=output.executive_explanation,
                 key_signals=output.key_signals,
                 context_used=context_used,
                 suggested_next_action=output.suggested_next_action,
+                priority_score=output.priority_score,
+                priority_level=output.priority_level,
+                action_urgency=output.action_urgency,
+                business_potential=output.business_potential,
+                information_completeness=output.information_completeness,
                 sender_industry=final_sender_industry,
+                customer_org_industry=final_sender_industry,
                 target_industry=final_target_industry,
+                requested_solution_domain=final_target_industry,
                 sub_industry=final_sub_industry,
                 business_activity=final_business_activity,
                 industry_confidence=industry_confidence,
@@ -505,10 +639,36 @@ class HybridClassifier:
                 industry_requires_review=industry_requires_review,
                 classification_method=output.classification_method,
                 requires_human_review=requires_review,
+                review_reasons=output.review_reasons,
                 model_provider=self.settings.LLM_PROVIDER if self.settings.is_llm_configured else "fallback",
                 model_name=self.settings.LLM_MODEL,
             )
             self.db.add(classification_record)
+
+        # 10b. Generate Actionable Tasks and Follow-ups
+        from app.models.task_model import Task
+        from app.services.explanation_service import generate_actionable_tasks
+        existing_tasks = self.db.query(Task).filter(Task.email_id == email_record.id).all()
+        if not existing_tasks:
+            task_titles = generate_actionable_tasks(
+                subject=email_record.subject or "",
+                cleaned_body=preprocessed.cleaned_body,
+                pipeline_category=final_pipeline_category,
+                intent=final_intent,
+            )
+            for t_title in task_titles:
+                task = Task(
+                    tenant_id=tenant_id,
+                    mailbox_id=email_record.mailbox_id,
+                    lead_id=email_record.lead_id,
+                    email_id=email_record.id,
+                    contact_id=contact.id if contact else None,
+                    title=t_title,
+                    priority=output.action_urgency if output.action_urgency in ["high", "medium", "low"] else "medium",
+                    status="pending",
+                    who_owes_response="company",
+                )
+                self.db.add(task)
 
         # 10. Update or create Conversation Thread Record
         self._sync_conversation_record(

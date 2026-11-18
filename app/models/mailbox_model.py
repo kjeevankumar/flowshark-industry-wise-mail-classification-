@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -23,6 +24,7 @@ class Mailbox(Base):
     __tablename__ = "mailboxes"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     email_address = Column(String(255), unique=True, nullable=False, index=True)
     encrypted_app_password = Column(Text, nullable=True)  # Fernet encrypted at rest
     is_active = Column(Boolean, default=False, nullable=False, index=True)
@@ -45,6 +47,7 @@ class Mailbox(Base):
     )
 
     # Scoped Relationships
+    tenant = orm_relationship("Tenant", back_populates="mailboxes")
     emails = orm_relationship("Email", back_populates="mailbox", cascade="all, delete-orphan")
     conversations = orm_relationship("Conversation", back_populates="mailbox", cascade="all, delete-orphan")
     classifications = orm_relationship("Classification", back_populates="mailbox", cascade="all, delete-orphan")

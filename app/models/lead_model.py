@@ -22,16 +22,21 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     mailbox_id = Column(Integer, ForeignKey("mailboxes.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     contact_id = Column(Integer, ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False, index=True)
 
     title = Column(String(500), nullable=False)
     status = Column(String(50), default="new", nullable=False)  # new, qualified, proposal_sent, negotiation, won, lost
+    priority = Column(String(50), default="warm", nullable=False, index=True)  # hot, warm, low
     estimated_value = Column(Float, nullable=True)
     business_context = Column(Text, nullable=True)
     source = Column(String(100), default="email", nullable=False)
     target_industry = Column(String(100), default="Unknown", nullable=True)
     sub_industry = Column(String(100), nullable=True)
+    requested_solution_domain = Column(String(100), default="Unknown", nullable=True)
+    assigned_to = Column(String(255), nullable=True)
 
     created_at = Column(
         DateTime,
@@ -52,10 +57,13 @@ class Lead(Base):
     )
 
     # Relationships
+    tenant = orm_relationship("Tenant", back_populates="leads")
+    organization = orm_relationship("Organization", back_populates="leads")
     mailbox = orm_relationship("Mailbox", back_populates="leads")
     contact = orm_relationship("Contact", back_populates="leads")
     emails = orm_relationship("Email", back_populates="lead")
     conversations = orm_relationship("Conversation", back_populates="lead")
+    tasks = orm_relationship("Task", back_populates="lead", cascade="all, delete-orphan")
     activities = orm_relationship(
         "LeadActivityHistory",
         back_populates="lead",

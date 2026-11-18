@@ -385,6 +385,8 @@ def delete_email(
 ):
     from app.models.classification_model import ClassificationHistory
     from app.models.lead_model import LeadActivityHistory
+    from app.models.task_model import Task
+    from app.models.task_model import Task
 
     mailbox_service = MailboxService(db=db, settings=settings)
     active_mb = mailbox_service.get_active_mailbox()
@@ -403,6 +405,7 @@ def delete_email(
         )
 
     # Clean up associated records
+    db.query(Task).filter(Task.email_id == email_id).delete(synchronize_session=False)
     db.query(ClassificationHistory).filter(ClassificationHistory.email_id == email_id).delete(synchronize_session=False)
     db.query(LeadActivityHistory).filter(LeadActivityHistory.email_id == email_id).delete(synchronize_session=False)
     db.query(Classification).filter(Classification.email_id == email_id).delete(synchronize_session=False)
@@ -427,6 +430,7 @@ def cleanup_non_business(
 ):
     from app.models.classification_model import ClassificationHistory
     from app.models.lead_model import LeadActivityHistory
+    from app.models.task_model import Task
 
     # Find ALL non-business / security alert / system notification emails in the DB
     query = (
@@ -464,6 +468,7 @@ def cleanup_non_business(
         }
 
     # Delete relational children
+    db.query(Task).filter(Task.email_id.in_(target_email_ids)).delete(synchronize_session=False)
     db.query(ClassificationHistory).filter(ClassificationHistory.email_id.in_(target_email_ids)).delete(synchronize_session=False)
     db.query(LeadActivityHistory).filter(LeadActivityHistory.email_id.in_(target_email_ids)).delete(synchronize_session=False)
     db.query(Classification).filter(Classification.email_id.in_(target_email_ids)).delete(synchronize_session=False)

@@ -44,27 +44,68 @@ export type PipelineCategory =
   | 'invoices'
   | 'needs_review';
 
+export interface Organization {
+  id: number;
+  tenant_id?: number;
+  name: string;
+  domain?: string;
+  industry?: string;
+  sub_industry?: string;
+  created_at: string;
+}
+
+export interface Task {
+  id: number;
+  tenant_id?: number;
+  mailbox_id?: number;
+  lead_id?: number;
+  email_id?: number;
+  contact_id?: number;
+  title: string;
+  description?: string;
+  assigned_to?: string;
+  due_date?: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  priority: 'high' | 'medium' | 'low';
+  who_owes_response: string;
+  created_at: string;
+  completed_at?: string;
+}
+
 export interface Contact {
   id: number;
   mailbox_id?: number;
+  tenant_id?: number;
+  organization_id?: number;
   email_address: string;
   name?: string;
   company_name?: string;
   relationship_type: Relationship;
   current_lead_stage: LeadStage;
   business_context?: string;
+  industry?: string;
+  sub_industry?: string;
   last_interaction_at?: string;
 }
 
 export interface Lead {
   id: number;
   mailbox_id?: number;
+  tenant_id?: number;
   contact_id: number;
+  organization_id?: number;
   title: string;
   status: LeadStage;
+  priority?: 'hot' | 'warm' | 'low';
   estimated_value?: number;
   business_context?: string;
   source: string;
+  target_industry?: string;
+  requested_solution_domain?: string;
+  sub_industry?: string;
+  assigned_to?: string;
+  organization?: Organization;
+  tasks?: Task[];
   created_at: string;
   updated_at: string;
 }
@@ -114,17 +155,28 @@ export interface EmailContextResponse {
 export interface Classification {
   id: number;
   mailbox_id?: number;
+  tenant_id?: number;
+  organization_id?: number;
   email_id: number;
   contact_id?: number;
   lead_id?: number;
   relationship: Relationship;
   intent: Intent;
+  commercial_intent?: string;
   lead_stage: LeadStage;
   confidence: number;
   classification_reason?: string;
+  executive_explanation?: string;
   key_signals?: string[];
   context_used?: string;
   suggested_next_action?: string;
+
+  // Priority & Qualification Scoring
+  priority_score?: number;
+  priority_level?: 'hot' | 'warm' | 'low';
+  action_urgency?: 'high' | 'medium' | 'low';
+  business_potential?: 'high' | 'medium' | 'low' | 'unknown';
+  information_completeness?: 'complete' | 'partial' | 'missing';
 
   // Business Relevance & Pipeline
   relevance_category?: RelevanceCategory | string;
@@ -134,7 +186,9 @@ export interface Classification {
 
   // Industry Dimensions (Section 6 & 8)
   sender_industry?: string;
+  customer_org_industry?: string;
   target_industry?: string;
+  requested_solution_domain?: string;
   sub_industry?: string;
   business_activity?: string;
   industry_confidence?: number;
@@ -144,6 +198,7 @@ export interface Classification {
 
   classification_method: string;
   requires_human_review: boolean;
+  review_reasons?: string[];
   model_provider?: string;
   model_name?: string;
   created_at: string;
@@ -183,6 +238,8 @@ export interface IndustryCorrectionRequest {
 export interface Email {
   id: number;
   mailbox_id?: number;
+  tenant_id?: number;
+  organization_id?: number;
   contact_id?: number;
   lead_id?: number;
   account_email: string;
@@ -205,6 +262,8 @@ export interface Email {
   classification?: Classification;
   contact?: Contact;
   lead?: Lead;
+  organization?: Organization;
+  tasks?: Task[];
 }
 
 export interface PaginatedEmails {

@@ -2,12 +2,50 @@ import React from 'react';
 import { Relationship, Intent, LeadStage } from '../types';
 
 interface BadgeProps {
-  type: 'relationship' | 'intent' | 'stage' | 'confidence' | 'method' | 'industry' | 'relevance' | 'pipeline' | 'classification';
+  type: 'relationship' | 'intent' | 'stage' | 'confidence' | 'method' | 'industry' | 'relevance' | 'pipeline' | 'classification' | 'priority' | 'commercial_intent';
   value: string | number;
   className?: string;
 }
 
 export const Badge: React.FC<BadgeProps> = ({ type, value, className = '' }) => {
+  if (type === 'priority') {
+    const val = String(value || '').toLowerCase().trim();
+    const styles: Record<string, string> = {
+      hot: 'bg-rose-50 text-rose-700 border-rose-300 font-bold',
+      warm: 'bg-amber-50 text-amber-700 border-amber-300 font-semibold',
+      low: 'bg-slate-100 text-slate-600 border-slate-200 font-medium',
+    };
+    const labels: Record<string, string> = {
+      hot: '🔥 Hot Lead',
+      warm: '⚡ Warm Lead',
+      low: 'Low Priority',
+    };
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border ${styles[val] || styles.low} ${className}`}>
+        {labels[val] || val.toUpperCase()}
+      </span>
+    );
+  }
+
+  if (type === 'commercial_intent') {
+    const val = String(value || '').toLowerCase().trim();
+    if (!val || val === 'none') return null;
+    const labels: Record<string, string> = {
+      invoice_issued: 'Invoice Issued',
+      payment_remittance: 'Payment Remittance',
+      payment_confirmation: 'Payment Confirmation',
+      payment_follow_up: 'Payment Follow-up',
+      payment_dispute: 'Payment Dispute',
+      purchase_order: 'Purchase Order',
+      quotation: 'Quotation Request',
+      commercial_negotiation: 'Commercial Negotiation',
+    };
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-indigo-50 text-indigo-700 border-indigo-200 ${className}`}>
+        {labels[val] || val.replace(/_/g, ' ')}
+      </span>
+    );
+  }
   if (type === 'classification' || type === 'pipeline') {
     const rawVal = String(value || '').toLowerCase().trim();
     const canonicalMap: Record<string, string> = {

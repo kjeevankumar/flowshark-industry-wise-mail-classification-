@@ -50,6 +50,8 @@ class ContactRead(BaseModel):
     """Representation of a business contact with relationship memory."""
     id: int
     mailbox_id: Optional[int] = None
+    tenant_id: Optional[int] = None
+    organization_id: Optional[int] = None
     email_address: str
     name: Optional[str] = None
     company_name: Optional[str] = None
@@ -63,18 +65,59 @@ class ContactRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrganizationRead(BaseModel):
+    """Representation of a customer company/organization."""
+    id: int
+    tenant_id: Optional[int] = None
+    name: str
+    domain: Optional[str] = None
+    industry: Optional[str] = "Unknown"
+    sub_industry: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TaskRead(BaseModel):
+    """Representation of an actionable business task or follow-up."""
+    id: int
+    tenant_id: Optional[int] = None
+    mailbox_id: Optional[int] = None
+    lead_id: Optional[int] = None
+    email_id: Optional[int] = None
+    contact_id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+    assigned_to: Optional[str] = None
+    due_date: Optional[datetime] = None
+    status: str
+    priority: str
+    who_owes_response: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class LeadRead(BaseModel):
     """Representation of a business lead opportunity."""
     id: int
     mailbox_id: Optional[int] = None
+    tenant_id: Optional[int] = None
     contact_id: int
+    organization_id: Optional[int] = None
     title: str
     status: str
+    priority: Optional[str] = "warm"
     estimated_value: Optional[float] = None
     business_context: Optional[str] = None
     source: str
     target_industry: Optional[str] = "Unknown"
+    requested_solution_domain: Optional[str] = "Unknown"
     sub_industry: Optional[str] = None
+    assigned_to: Optional[str] = None
+    organization: Optional[OrganizationRead] = None
+    tasks: List[TaskRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -99,17 +142,28 @@ class ClassificationRead(BaseModel):
     """Representation of an email classification."""
     id: int
     mailbox_id: Optional[int] = None
+    tenant_id: Optional[int] = None
+    organization_id: Optional[int] = None
     email_id: int
     contact_id: Optional[int] = None
     lead_id: Optional[int] = None
     relationship: str
     intent: str
+    commercial_intent: Optional[str] = "none"
     lead_stage: str
     confidence: float
     classification_reason: Optional[str] = None
+    executive_explanation: Optional[str] = None
     key_signals: Optional[List[str]] = Field(default_factory=list)
     context_used: Optional[str] = None
     suggested_next_action: Optional[str] = None
+
+    # Priority & Qualification
+    priority_score: Optional[float] = 0.5
+    priority_level: Optional[str] = "warm"
+    action_urgency: Optional[str] = "medium"
+    business_potential: Optional[str] = "medium"
+    information_completeness: Optional[str] = "partial"
 
     # Business Relevance & Pipeline
     relevance_category: Optional[str] = "unknown_review"
@@ -119,7 +173,9 @@ class ClassificationRead(BaseModel):
 
     # Industry Dimensions
     sender_industry: Optional[str] = "Unknown"
+    customer_org_industry: Optional[str] = "Unknown"
     target_industry: Optional[str] = "Unknown"
+    requested_solution_domain: Optional[str] = "Unknown"
     sub_industry: Optional[str] = None
     business_activity: Optional[str] = None
     industry_confidence: Optional[float] = 0.0
@@ -129,6 +185,7 @@ class ClassificationRead(BaseModel):
 
     classification_method: str
     requires_human_review: bool
+    review_reasons: Optional[List[str]] = Field(default_factory=list)
     model_provider: Optional[str] = None
     model_name: Optional[str] = None
     created_at: datetime
@@ -140,6 +197,8 @@ class EmailRead(BaseModel):
     """Full representation of a synchronized email with classification."""
     id: int
     mailbox_id: Optional[int] = None
+    tenant_id: Optional[int] = None
+    organization_id: Optional[int] = None
     contact_id: Optional[int] = None
     lead_id: Optional[int] = None
     account_email: str
@@ -162,6 +221,8 @@ class EmailRead(BaseModel):
     classification: Optional[ClassificationRead] = None
     contact: Optional[ContactRead] = None
     lead: Optional[LeadRead] = None
+    organization: Optional[OrganizationRead] = None
+    tasks: List[TaskRead] = Field(default_factory=list)
 
     @field_serializer("received_at", "sync_timestamp", mode="plain", check_fields=False)
     def serialize_email_dt(self, dt: Optional[datetime]) -> Optional[str]:

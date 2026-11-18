@@ -209,5 +209,32 @@ export const api = {
     const res = await apiClient.post('/api/classification/test-demo', payload);
     return res.data;
   },
+
+  // Opportunities / Leads APIs
+  getOpportunities: async (params?: { status?: string; priority?: string; search?: string }): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/api/opportunities', { params });
+    return res.data;
+  },
+
+  updateOpportunity: async (leadId: number, data: { status?: string; priority?: string; assigned_to?: string; estimated_value?: number; requested_solution_domain?: string }): Promise<any> => {
+    const res = await apiClient.patch(`/api/opportunities/${leadId}`, data);
+    return res.data;
+  },
+
+  // Actionable Tasks APIs
+  getTasks: async (params?: { status?: string; priority?: string; lead_id?: number; email_id?: number }): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/api/tasks', { params });
+    return res.data;
+  },
+
+  createTask: async (data: { title: string; priority?: string; lead_id?: number; email_id?: number; description?: string }): Promise<any> => {
+    const res = await apiClient.post('/api/tasks', data);
+    return res.data;
+  },
+
+  updateTask: async (taskId: number, data: { status?: string; priority?: string; assigned_to?: string }): Promise<any> => {
+    const res = await apiClient.patch(`/api/tasks/${taskId}`, data);
+    return res.data;
+  },
 };
 

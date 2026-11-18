@@ -22,7 +22,9 @@ class Contact(Base):
     __tablename__ = "contacts"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     mailbox_id = Column(Integer, ForeignKey("mailboxes.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
 
     email_address = Column(String(255), nullable=False, index=True)  # Normalized lowercase
     name = Column(String(255), nullable=True)
@@ -54,7 +56,10 @@ class Contact(Base):
     )
 
     # Relationships
+    tenant = orm_relationship("Tenant", back_populates="contacts")
+    organization = orm_relationship("Organization", back_populates="contacts")
     mailbox = orm_relationship("Mailbox", back_populates="contacts")
     leads = orm_relationship("Lead", back_populates="contact", cascade="all, delete-orphan", order_by="desc(Lead.updated_at)")
     emails = orm_relationship("Email", back_populates="contact")
     conversations = orm_relationship("Conversation", back_populates="contact")
+    tasks = orm_relationship("Task", back_populates="contact")

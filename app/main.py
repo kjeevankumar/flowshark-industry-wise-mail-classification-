@@ -22,6 +22,8 @@ from app.routes.classification_routes import router as classification_router
 from app.routes.dashboard_routes import router as dashboard_router
 from app.routes.email_inbox_routes import router as inbox_router
 from app.routes.email_routes import router as email_router
+from app.routes.opportunity_routes import router as opportunity_router
+from app.routes.task_routes import router as task_router
 
 # Configure clean structured logging
 settings = get_settings()
@@ -149,6 +151,8 @@ app.include_router(email_router)
 app.include_router(inbox_router)
 app.include_router(classification_router)
 app.include_router(dashboard_router)
+app.include_router(opportunity_router)
+app.include_router(task_router)
 
 # Direct aliases for Section 9 contract endpoints
 from app.routes.classification_routes import get_industries_taxonomy, update_industry_classification

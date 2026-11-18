@@ -130,3 +130,38 @@ def sample_mime_encoded_subject_bytes() -> bytes:
     )
     return raw
 
+
+@pytest.fixture
+def test_db():
+    """Create an isolated in-memory SQLite database for classification tests."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.db.session import Base
+    from app.models.mailbox_model import Mailbox
+    from app.models.tenant_model import Tenant
+
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = TestingSession()
+
+    # Create default tenant and mailbox
+    tenant = Tenant(id=1, name="FlowShark Default", slug="default")
+    session.add(tenant)
+    session.flush()
+
+    mb = Mailbox(
+        tenant_id=1,
+        email_address="agent@flowshark.com",
+        is_active=True,
+    )
+    session.add(mb)
+    session.commit()
+    session.refresh(mb)
+
+    try:
+        yield session, mb
+    finally:
+        session.close()
+
+

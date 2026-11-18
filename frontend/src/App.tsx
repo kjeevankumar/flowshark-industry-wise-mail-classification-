@@ -193,9 +193,10 @@ export const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Email Detail Drawer / Modal */}
+      {/* Email Detail Drawer / Modal - Keyed by ID for absolute lifecycle isolation */}
       {selectedEmail && (
         <EmailDetailModal
+          key={selectedEmail.id}
           email={selectedEmail}
           onClose={() => setSelectedEmail(null)}
           onUpdated={() => {
