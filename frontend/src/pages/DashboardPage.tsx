@@ -213,21 +213,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
           <div className="flex items-center space-x-3 pt-2 flex-wrap gap-y-2">
             <button
-              onClick={() => setShowDemoModal(true)}
-              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-bold rounded-lg shadow-md transition-all flex items-center space-x-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Test Demo Email / AI Simulation</span>
-            </button>
-            <button
-              onClick={handleBatchClassify}
-              disabled={batchClassifying}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-md transition-all flex items-center space-x-2 disabled:opacity-50"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${batchClassifying ? 'animate-spin' : ''}`} />
-              <span>{batchClassifying ? 'Processing...' : 'Classify Next 20 Emails'}</span>
-            </button>
-            <button
               onClick={() => onNavigate('inbox')}
               className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg transition-colors border border-white/10"
             >

@@ -29,7 +29,7 @@ export const DemoEmailModal: React.FC<DemoEmailModalProps> = ({
   onEmailInjected,
 }) => {
   const [presets, setPresets] = useState<Record<string, any>>({});
-  const [selectedPresetKey, setSelectedPresetKey] = useState<string>('qualified_lead');
+  const [selectedPresetKey, setSelectedPresetKey] = useState<string>('new_lead');
   const [sender, setSender] = useState<string>('');
   const [subject, setSubject] = useState<string>('');
   const [body, setBody] = useState<string>('');
