@@ -180,6 +180,92 @@ export const InboxPage: React.FC<InboxPageProps> = ({
     return titles[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
+  const getEmptyStateInfo = (cat?: string) => {
+    if (!cat) {
+      return {
+        title: 'No emails found',
+        desc: 'Try resetting search filters or synchronizing new emails from Gmail.',
+      };
+    }
+    const emptyStates: Record<string, { title: string; desc: string }> = {
+      purchase_orders: {
+        title: 'No purchase orders found.',
+        desc: 'Official PO documents and purchase confirmations will appear here.',
+      },
+      invoice_billing: {
+        title: 'No invoice or billing records found.',
+        desc: 'Invoice requests and billing update communications will appear here.',
+      },
+      invoices: {
+        title: 'No invoice requests found.',
+        desc: 'No invoice or billing communications currently exist in this mailbox.',
+      },
+      invoice_request: {
+        title: 'No invoice requests found.',
+        desc: 'No emails requesting invoices or tax billing copies currently exist in this mailbox.',
+      },
+      invoice_update: {
+        title: 'No invoice updates found.',
+        desc: 'No emails requesting invoice amendments or GSTIN corrections currently exist in this mailbox.',
+      },
+      payments: {
+        title: 'No payment communications found.',
+        desc: 'Payment remittances, payment follow-ups, and billing disputes will appear here.',
+      },
+      payment_remittance: {
+        title: 'No payment remittances found.',
+        desc: 'No remittance advice or UTR payment transfer confirmations found.',
+      },
+      payment_follow_up: {
+        title: 'No payment follow-ups found.',
+        desc: 'No pending payment follow-up inquiries found in this mailbox.',
+      },
+      payment_dispute: {
+        title: 'No payment disputes found.',
+        desc: 'No disputed invoices or billing discrepancy emails found.',
+      },
+      new_leads: {
+        title: 'No new leads found.',
+        desc: 'New business inquiries and discovery emails will appear here.',
+      },
+      negotiations: {
+        title: 'No negotiations found.',
+        desc: 'Commercial discussions, rate revisions, and contract negotiations will appear here.',
+      },
+      follow_ups: {
+        title: 'No follow-ups found.',
+        desc: 'Milestone check-ins, proposal follow-ups, and project status updates will appear here.',
+      },
+      clarifications: {
+        title: 'No clarifications found.',
+        desc: 'Scope inquiries and technical requirement questions will appear here.',
+      },
+      business_clarifications: {
+        title: 'No clarifications found.',
+        desc: 'Scope inquiries and technical requirement questions will appear here.',
+      },
+      existing_leads: {
+        title: 'No existing leads found.',
+        desc: 'Follow-on opportunities from existing clients will appear here.',
+      },
+      needs_review: {
+        title: 'No emails needing review.',
+        desc: 'Emails with ambiguous classification signals requiring human triage will appear here.',
+      },
+      system_notifications: {
+        title: 'Zero non-business alerts in database',
+        desc: 'All Google security notifications and system noise have been purged.',
+      },
+    };
+
+    return (
+      emptyStates[cat] || {
+        title: `No ${formatCategoryTitle(cat).toLowerCase()} found.`,
+        desc: 'Try resetting search filters or synchronizing new emails.',
+      }
+    );
+  };
+
   return (
     <div className="p-8 space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
@@ -304,14 +390,10 @@ export const InboxPage: React.FC<InboxPageProps> = ({
                   <td colSpan={7} className="p-12 text-center text-slate-500">
                     <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-semibold text-slate-700">
-                      {categoryFilter === 'system_notifications'
-                        ? 'Zero non-business alerts in database'
-                        : 'No emails found'}
+                      {getEmptyStateInfo(categoryFilter).title}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      {categoryFilter === 'system_notifications'
-                        ? 'All Google security notifications and system noise have been purged.'
-                        : 'Try resetting search filters or synchronizing new emails.'}
+                      {getEmptyStateInfo(categoryFilter).desc}
                     </p>
                   </td>
                 </tr>
